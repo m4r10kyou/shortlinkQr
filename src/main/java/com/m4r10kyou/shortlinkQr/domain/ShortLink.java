@@ -102,11 +102,8 @@ public class ShortLink {
         this.logoData = null;
     }
 
-    public void recordVisit(){
-        this.visitCount++;
-    }
-
     public boolean isExpired(){
+
         Instant expiration = this.expiresAt;
 
         if(null == expiration){
