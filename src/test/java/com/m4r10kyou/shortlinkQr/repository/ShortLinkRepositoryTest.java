@@ -17,7 +17,7 @@ public class ShortLinkRepositoryTest {
     ShortLinkRepository repository;
 
     @BeforeEach
-    void createShortLinkMocks(){
+    void setUpShortLinkFixtures(){
 
         ShortLink slWinterDimondi = new ShortLink("DimondiWinter26",
                 "http://www.dimondi-restaurant.com/2026/NovFeb/menu",null);
@@ -62,6 +62,19 @@ public class ShortLinkRepositoryTest {
         Optional<ShortLink> found = repository.findByCode("DimondiSpring26");
 
         assertThat(found).isEmpty();
+    }
+
+    @Test
+    void incrementsVisitCountByOne(){
+
+        Optional<ShortLink> found = repository.findByCode("DimondiSummer26");
+        int visitsOrigin = found.orElseThrow().getVisitCount();
+
+        repository.registerVisitCount("DimondiSummer26");
+
+        Optional<ShortLink> afterVisit = repository.findByCode("DimondiSummer26");
+
+        assertThat(afterVisit.orElseThrow().getVisitCount()).isEqualTo(visitsOrigin + 1);
     }
 
 }
