@@ -22,6 +22,15 @@ public class ShortLinkService {
         this.codeGenerator = codeGenerator;
     }
 
+    @Transactional(readOnly = true)
+    public ShortLink getByCode(String code) {
+
+        String message = "Code '" + code + "' does not exist!";
+
+        return shortLinkRepository.findByCode(code)
+                .orElseThrow(() -> new ShortLinkNotFoundException(message));
+    }
+
     @Transactional
     public ShortLink createLink(String targetUrl, String customAlias, Instant expiresAt) {
 
@@ -48,8 +57,7 @@ public class ShortLinkService {
     @Transactional
     public String resolveCode(String code) {
 
-        ShortLink shortLink = shortLinkRepository.findByCode(code)
-                .orElseThrow(() -> new ShortLinkNotFoundException("Code '" + code + "' does not exist!"));
+        ShortLink  shortLink = this.getByCode(code);
 
         if (shortLink.isExpired()) {
             throw new ShortLinkExpiredException("Code '" + code + "' is expired");
@@ -63,8 +71,7 @@ public class ShortLinkService {
     @Transactional
     public ShortLink updateDestination(String code, String newTargetUrl) {
 
-        ShortLink shortLink = shortLinkRepository.findByCode(code)
-                .orElseThrow(() -> new ShortLinkNotFoundException("Cannot update destination of code '" + code + "'"));
+        ShortLink  shortLink = this.getByCode(code);
 
         shortLink.changeTargetUrl(newTargetUrl);
         return shortLink;
