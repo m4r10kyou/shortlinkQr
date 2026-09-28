@@ -21,9 +21,9 @@ public class CodeGenerator {
         this.numRetries = maxRetries;
     }
 
-    public String generate(Predicate<String> isUsed){
+    public String generate(Predicate<String> isUsed) {
 
-        for(int retry = 0; retry < numRetries ; retry ++){
+        for (int retry = 0; retry < numRetries; retry++) {
 
             String code = generateRandomCode();
 

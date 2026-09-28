@@ -82,12 +82,12 @@ public class ShortLink {
         this.expiresAt = expiresAt;
     }
 
-    public void changeTargetUrl(String url){
+    public void changeTargetUrl(String url) {
 
         this.targetUrl = url;
     }
 
-    public void attachLogo(byte[] logoData, LogoContentType contentType){
+    public void attachLogo(byte[] logoData, LogoContentType contentType) {
 
         Objects.requireNonNull(logoData, "Logo cannot be null");
         Objects.requireNonNull(contentType, "ContentType cannot be null");
@@ -96,17 +96,17 @@ public class ShortLink {
         this.logoContentType = contentType;
     }
 
-    public void removeLogo(){
+    public void removeLogo() {
 
         this.logoContentType = null;
         this.logoData = null;
     }
 
-    public boolean isExpired(){
+    public boolean isExpired() {
 
         Instant expiration = this.expiresAt;
 
-        if(null == expiration){
+        if (null == expiration) {
 
             return false;
         }

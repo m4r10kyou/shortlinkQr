@@ -8,6 +8,7 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 
 import java.util.List;
 import java.util.Optional;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DataJpaTest
@@ -17,13 +18,13 @@ public class ShortLinkRepositoryTest {
     ShortLinkRepository repository;
 
     @BeforeEach
-    void setUpShortLinkFixtures(){
+    void setUpShortLinkFixtures() {
 
         ShortLink slWinterDimondi = new ShortLink("DimondiWinter26",
-                "http://www.dimondi-restaurant.com/2026/NovFeb/menu",null);
+                "http://www.dimondi-restaurant.com/2026/NovFeb/menu", null);
 
         ShortLink slSummerDimondi = new ShortLink("DimondiSummer26",
-                "http://www.dimondi-restaurant.com/2026/JunSep/menu",null);
+                "http://www.dimondi-restaurant.com/2026/JunSep/menu", null);
 
         List<ShortLink> slEntities = List.of(slSummerDimondi, slWinterDimondi);
 
@@ -31,7 +32,7 @@ public class ShortLinkRepositoryTest {
     }
 
     @Test
-    void returnsTrueWhenCodeExists(){
+    void returnsTrueWhenCodeExists() {
 
         boolean existMenuWinter = repository.existsByCode("DimondiWinter26");
 
@@ -39,7 +40,7 @@ public class ShortLinkRepositoryTest {
     }
 
     @Test
-    void returnsFalseWhenCodeDoesNotExist(){
+    void returnsFalseWhenCodeDoesNotExist() {
 
         boolean existMenuAutumn = repository.existsByCode("DimondiAutumn26");
 
@@ -47,7 +48,7 @@ public class ShortLinkRepositoryTest {
     }
 
     @Test
-    void findsLinkByItsCode(){
+    void findsLinkByItsCode() {
 
         Optional<ShortLink> found = repository.findByCode("DimondiSummer26");
 
@@ -57,7 +58,7 @@ public class ShortLinkRepositoryTest {
 
 
     @Test
-    void returnsEmptyWhenCodeNotFound(){
+    void returnsEmptyWhenCodeNotFound() {
 
         Optional<ShortLink> found = repository.findByCode("DimondiSpring26");
 
@@ -65,7 +66,7 @@ public class ShortLinkRepositoryTest {
     }
 
     @Test
-    void incrementsVisitCountByOne(){
+    void incrementsVisitCountByOne() {
 
         Optional<ShortLink> found = repository.findByCode("DimondiSummer26");
         int visitsOrigin = found.orElseThrow().getVisitCount();
