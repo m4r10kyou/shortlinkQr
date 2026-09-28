@@ -22,20 +22,20 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 
 ### Short codes
 
-**Random, not sequential.** *URLs use unpredictable strings to prevent data scraping and decouple the API form the DataBase*
+**Random, not sequential.** *URLs use unpredictable strings to prevent data scraping and decouple the API from the Database*
 - 7 Base62 characters ≈ 3.5 trillion combinations
 - A sequential database id in the URL would let anyone walk the whole
   table by counting up
 - It would also tie the public API contract to the persistence layer
 
-**`SecureRandom`, not `Random`.** *Criptographically secure generation ensures future codes cannot be guessed from observed outputs*
+**`SecureRandom`, not `Random`.** *Cryptographically secure generation ensures future codes cannot be guessed from observed outputs*
 - `Random` is a linear congruential generator with a 48-bit seed
 - A few observed outputs are enough to reconstruct its state and
   predict the next codes
 - Same concern as above: nobody should be able to guess codes that
   have not been issued yet
 
-**Full 62-character alphabet.** *Maximizing the address spaces takes priority over visual clarity, as QR scanning is the primary use case*
+**Full 62-character alphabet.** *Maximizing the address space takes priority over visual clarity, as QR scanning is the primary use case*
 - Considered excluding visually ambiguous characters (0/O, 1/l/I) to
   reduce transcription errors when someone types a code from a printed
   sign
@@ -50,7 +50,7 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 
 ### Visit counting
 
-**Atomic UPDATE, not read-modify-write.** *Delegatin the increment operation to the database guarantees accuracy under concurrent traffic without unnecessary locking*
+**Atomic UPDATE, not read-modify-write.** *Delegating the increment operation to the database guarantees accuracy under concurrent traffic without unnecessary locking*
 - Loading the entity, incrementing in Java and saving loses visits
   under concurrency: two requests read 40, both write 41
 - `set visit_count = visit_count + 1 where code = ?` lets the database
@@ -60,18 +60,18 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 
 ### Domain modelling
 
-**`Instant`, not `LocalDateTime`.** *Using absolute ponts on the timeline prevents critical bugs whe evaluating expirations across different time zones*
+**`Instant`, not `LocalDateTime`.** *Using absolute points on the timeline prevents critical bugs when evaluating expirations across different time zones*
 - `LocalDateTime` carries no time zone
 - An expiry computed in local time and compared on a server in another
   zone expires early or late
 
-**Behaviour over setters.** * The entity encapsulates its own logic and state transitions to guarantee internal consistency at all times*
+**Behaviour over setters.** *The entity encapsulates its own logic and state transitions to guarantee internal consistency at all times*
 - The entity exposes `changeTargetUrl`, `attachLogo`, `removeLogo`
   instead of a setter per field
 - `attachLogo` takes the bytes and the content type together, so the
   pair can never be left inconsistent
 
-**Exceptions carry no HTTP semantics.** *Domain errors remain agnostic to the web tansports layer, ensuring reusability layer, ensuring reusability across the different contexts*
+**Exceptions carry no HTTP semantics.** *Domain errors remain agnostic to the web transport layer, ensuring reusability across the different contexts*
 - Plain `RuntimeException` subclasses, no `@ResponseStatus`
 - Mapping to 404/409/410 belongs to the web layer
 - Keeps the service usable from a batch job or a message consumer,
@@ -85,6 +85,8 @@ Three levels, each with a different cost and purpose:
 - **MockMvc** — simulated HTTP requests, once the controller exists
 
 Failure-path tests also verify that no visit is recorded.
+
+
 ## 🛠️ Tech Stack
 * **Java 21**
 * **Spring Boot 4.1**
