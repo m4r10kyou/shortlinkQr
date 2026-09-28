@@ -6,8 +6,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class ShortlinkQrApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(ShortlinkQrApplication.class, args);
-	}
+    public static void main(String[] args) {
+        SpringApplication.run(ShortlinkQrApplication.class, args);
+    }
 
 }

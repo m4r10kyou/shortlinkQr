@@ -44,14 +44,15 @@ public class ShortLinkService {
         ShortLink shortLink = new ShortLink(finalCode, targetUrl, expiresAt);
         return shortLinkRepository.save(shortLink);
     }
+
     @Transactional
     public String resolveCode(String code) {
 
         ShortLink shortLink = shortLinkRepository.findByCode(code)
-                .orElseThrow(() -> new ShortLinkNotFoundException("Code '"+code+"' does not exist!"  ));
+                .orElseThrow(() -> new ShortLinkNotFoundException("Code '" + code + "' does not exist!"));
 
         if (shortLink.isExpired()) {
-            throw new ShortLinkExpiredException("Code '"+ code +"' is expired");
+            throw new ShortLinkExpiredException("Code '" + code + "' is expired");
         }
 
         shortLinkRepository.registerVisitCount(code);
@@ -63,7 +64,7 @@ public class ShortLinkService {
     public ShortLink updateDestination(String code, String newTargetUrl) {
 
         ShortLink shortLink = shortLinkRepository.findByCode(code)
-                .orElseThrow(() -> new ShortLinkNotFoundException("Cannot update destination of code '"+code+"'"));
+                .orElseThrow(() -> new ShortLinkNotFoundException("Cannot update destination of code '" + code + "'"));
 
         shortLink.changeTargetUrl(newTargetUrl);
         return shortLink;

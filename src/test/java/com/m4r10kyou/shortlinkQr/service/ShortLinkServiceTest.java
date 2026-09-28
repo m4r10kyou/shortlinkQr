@@ -139,7 +139,7 @@ class ShortLinkServiceTest {
 
         when(shortLinkRepository.findByCode(code)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> shortLinkService.updateDestination(code,target))
+        assertThatThrownBy(() -> shortLinkService.updateDestination(code, target))
                 .isInstanceOf(ShortLinkNotFoundException.class)
                 .hasMessageContaining(code);
 
