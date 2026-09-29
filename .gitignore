@@ -37,3 +37,7 @@ data/
 
 ### Mac ###
 .DS_Store
+
+### Application Logs ###
+logs/
+*.log
