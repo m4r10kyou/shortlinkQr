@@ -25,10 +25,8 @@ public class ShortLinkService {
     @Transactional(readOnly = true)
     public ShortLink getByCode(String code) {
 
-        String message = "Code '" + code + "' does not exist!";
-
         return shortLinkRepository.findByCode(code)
-                .orElseThrow(() -> new ShortLinkNotFoundException(message));
+                .orElseThrow(() -> new ShortLinkNotFoundException(code));
     }
 
     @Transactional
@@ -40,7 +38,7 @@ public class ShortLinkService {
 
             if (shortLinkRepository.existsByCode(customAlias)) {
 
-                throw new AliasAlreadyExistsException("The code '" + customAlias + "' already in use");
+                throw new AliasAlreadyExistsException( customAlias );
             }
 
             finalCode = customAlias;
@@ -60,7 +58,7 @@ public class ShortLinkService {
         ShortLink  shortLink = this.getByCode(code);
 
         if (shortLink.isExpired()) {
-            throw new ShortLinkExpiredException("Code '" + code + "' is expired");
+            throw new ShortLinkExpiredException(code);
         }
 
         shortLinkRepository.registerVisitCount(code);

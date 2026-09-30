@@ -40,6 +40,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
         problem.setTitle("Short link not found");
         problem.setType(URI.create("urn:problem-type:not-found"));
+        problem.setProperty("code", ex.getCode());
 
         return problem;
     }
@@ -55,6 +56,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         );
         problem.setTitle("Alias already exists");
         problem.setType(URI.create("urn:problem-type:alias-occupied"));
+        problem.setProperty("alias", ex.getAlias());
 
         return problem;
     }
@@ -70,6 +72,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         );
         problem.setTitle("Short link expired");
         problem.setType(URI.create("urn:problem-type:link-expired"));
+        problem.setProperty("code", ex.getCode());
 
         return problem;
     }
