@@ -92,6 +92,11 @@ public class ShortLink {
         Objects.requireNonNull(logoData, "Logo cannot be null");
         Objects.requireNonNull(contentType, "ContentType cannot be null");
 
+        if (logoData.length == 0) {
+
+            throw new IllegalArgumentException("Logo array cannot be empty");
+        }
+
         this.logoData = logoData;
         this.logoContentType = contentType;
     }
@@ -112,6 +117,11 @@ public class ShortLink {
         }
 
         return Instant.now().isAfter(expiration);
+    }
+
+    public boolean hasLogo() {
+
+        return null != this.logoData;
     }
 
 }
