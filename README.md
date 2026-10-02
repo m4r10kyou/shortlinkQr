@@ -118,7 +118,8 @@ Three levels, each with a different cost and purpose:
   - **Mockito** (Mocking domain logic without database overhead)
   - **AssertJ** (Fluent and semantic assertions)
   - **MockMvc** (HTTP layer simulation)
-
+  - **Postman** (API contract validation)
+  
 ## 🚀 How to Run
 
 You can easily start the application from your terminal using the Maven wrapper.
@@ -145,6 +146,28 @@ You can easily start the application from your terminal using the Maven wrapper.
    ```text
    http://localhost:9080/h2-console 
    ```  
+
+## 🧪 Testing the API
+
+The collection at `docs/shortlinkQr.postman_collection.json` works as an
+executable specification. Import it into Postman and run it with the Collection
+Runner: every request asserts its expected status and body, so the result is a
+pass/fail report rather than something to inspect by eye.
+
+Twenty-three requests across four folders:
+
+- **Links API** — creation and retrieval, including the alias conflict. The
+  generated code is captured into a variable, so later requests need no manual
+  copying.
+- **Validation** — every constraint on the request DTO, each one checked against
+  the field it should name in the `errors` map.
+- **Protocol errors** — malformed JSON, unsupported method, unsupported media
+  type. Before the advice extended `ResponseEntityExceptionHandler`, all three
+  returned 500.
+- **Redirect** — the public endpoint, asserting 302 specifically and that the
+  response is not cacheable.
+
+Last full run: 46 assertions, 46 passed.
 
 ## 📋 Project Status
 
