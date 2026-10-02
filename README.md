@@ -119,7 +119,7 @@ Three levels, each with a different cost and purpose:
   - **AssertJ** (Fluent and semantic assertions)
   - **MockMvc** (HTTP layer simulation)
   - **Postman** (API contract validation)
-  - 
+  
 ## 🚀 How to Run
 
 You can easily start the application from your terminal using the Maven wrapper.
