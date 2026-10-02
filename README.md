@@ -149,7 +149,7 @@ You can easily start the application from your terminal using the Maven wrapper.
 
 ## 🧪 Testing the API
 
-The collection at `docs/shortlinkQr.postman_collection.json` works as an
+The collection at [`docs/shortlinkQr.postman_collection.json`](docs/shortlinkQr.postman_collection.json) works as an
 executable specification. Import it into Postman and run it with the Collection
 Runner: every request asserts its expected status and body, so the result is a
 pass/fail report rather than something to inspect by eye.
