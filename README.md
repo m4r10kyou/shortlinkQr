@@ -88,6 +88,28 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 - A URL with a space would pass a simple regex validation, get saved to the database, and crash with a 500 error during the public redirect.
 - Validation is performed by constructing a `java.net.URI` within a custom constraint validator, which also verifies the allowed schemes (HTTP/HTTPS).
 
+### QR codes
+
+**Error correction level H.** *Reed-Solomon error correction recovers around 30% of damaged codewords.*
+- Normally this level is paid for in capacity, but since what is being encoded here is about 30 characters, there is plenty of capacity: the maximum level comes for free.
+- This is what will allow a logo to cover part of the symbol without breaking readability.
+
+**The symbol is not stored.** *It is a deterministic function of the short URL.*
+- The same input produces the same bytes, always. Storing it would be caching, not persistence. A test enforces this.
+
+**Cached forever, unlike the redirect** *The image is immutable.*
+- The QR endpoint uses a long `max-age` plus `immutable`, while the redirect carries `no-cache`.
+- Two endpoints in the same project with opposite policies, each for a specific reason: what the QR encodes never changes, the destination it points to does.
+
+**Generating a QR is not scanning it.** *The endpoint reads with `getByCode`, never with `resolveCode`.*
+- If it counted as a visit, the counter would go up every time someone opens the image to print it. A test prevents this.
+
+**PNG, not JPEG.** *A lossless format is required.*
+- Lossy compression blurs the edges between modules, and scanning begins to fail intermittently.
+
+**The quiet zone is not configurable.** *Four modules, the minimum of the specification, as a constant.*
+- The general rule: make configurable what someone might reasonably want to change. The image size does depend on the use case; the margin has a single correct value, and leaving it open only allows lowering it and breaking scanning without understanding why.
+
 ### Testing
 
 Three levels, each with a different cost and purpose:
@@ -101,6 +123,7 @@ Three levels, each with a different cost and purpose:
 - **Isolated configuration:** `@WebMvcTest` explicitly pins the `shortlink.base-url` property. Tests must control their own inputs and not fail simply because a production configuration file was modified.
 - **Unified assertion style:** AssertJ is used exclusively across the suite to maintain semantic readability and avoid mixing assertion libraries.
 - **Database integrity:** Failure-path tests also explicitly verify that no visit is recorded.
+- **Round-trip testing:** *Generate, decode, and compare with the original URL.* This is the only assertion that proves the image can actually be scanned. It is also the instrument that will be used to measure how far the logo can grow.
 
 ## ⚠️ Known Limitations
 
@@ -113,6 +136,7 @@ Three levels, each with a different cost and purpose:
 - **Spring Boot 4.1**
 - **Spring Data JPA**
 - **H2 Database** (file-based, local development)
+- **ZXing** (`core` for encoding, `javase` for the bridge to `BufferedImage`).
 - **Testing Ecosystem:**
   - **JUnit 5**
   - **Mockito** (Mocking domain logic without database overhead)
@@ -186,7 +210,7 @@ Last full run: 46 assertions, 46 passed.
    - [x] Public redirect endpoint
    - [x] HTTP error mapping
 - [ ] **QR code generation**
-   - [ ] QR rendering
+   - [x] QR rendering
    - [ ] Logo embedding
 - [ ] **Deployment**
    - [ ] Dockerfile
