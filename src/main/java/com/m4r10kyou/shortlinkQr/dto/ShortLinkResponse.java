@@ -13,11 +13,9 @@ public record ShortLinkResponse (
         boolean hasLogo
 ) {
 
-    public static ShortLinkResponse from(ShortLink shortLink, String baseUrl) {
+    public static ShortLinkResponse from(ShortLink shortLink, String normalisedBaseUrl) {
 
-        String cleanBaseUrl = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
-
-        String finalUrl = cleanBaseUrl + shortLink.getCode();
+        String finalUrl = normalisedBaseUrl + shortLink.getCode();
 
         return new ShortLinkResponse(
                 finalUrl,
