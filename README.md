@@ -110,6 +110,13 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 **The quiet zone is not configurable.** *Four modules, the minimum of the specification, as a constant.*
 - The general rule: make configurable what someone might reasonably want to change. The image size does depend on the use case; the margin has a single correct value, and leaving it open only allows lowering it and breaking scanning without understanding why.
 
+**Logo coverage is measured, not guessed.** *A centred white plate of 25% of the image width.*
+- An experiment swept plate sizes from 0% to 70% of the image width over ten different codes, decoding every result. 32% was the last size where all ten decoded, 33% lost three of them, and nothing decoded from 38% on. The percentage is taken over the full image, quiet zone included, so slightly more of the symbol itself is covered.
+- Production uses 25%, seven points below the measured ceiling. The margin is not timidity: the measurement decodes a perfect in-memory PNG with the most tolerant reader configuration available, while a real scan involves a phone camera, an angle, print quality and ambient light.
+- Between 33% and 37% success depends on the *content* of the link, because the module pattern and the mask differ per code. A feature that works for four links out of ten, with no way for the user to know which, is worse than a smaller logo.
+- Width, not area: 25% of the width covers about 6% of the surface. The ~30% figure for level H is a ceiling on recoverable codewords, not a budget for how much of the picture a logo may occupy.
+- The experiment is kept, disabled, in `QrLogoCoverageExperiment`. If the base URL ever gets longer, the symbol gains a version, its capacity changes and the ceiling has to be measured again.
+
 ### Testing
 
 Three levels, each with a different cost and purpose:
