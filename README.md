@@ -97,7 +97,7 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 **The symbol is not stored.** *It is a deterministic function of the short URL.*
 - The same input produces the same bytes, always. Storing it would be caching, not persistence. A test enforces this.
 
-**Cached forever, unlike the redirect** *The image is immutable.*
+**Cached forever, unlike the redirect.** *The image is immutable.*
 - The QR endpoint uses a long `max-age` plus `immutable`, while the redirect carries `no-cache`.
 - Two endpoints in the same project with opposite policies, each for a specific reason: what the QR encodes never changes, the destination it points to does.
 
@@ -116,6 +116,12 @@ Three levels, each with a different cost and purpose:
 - **`@DataJpaTest`** — real (in-memory) database, for the repository.
 - **Mockito** — no database, for the service's own decisions.
 - **MockMvc** — simulated HTTP requests for the web layer.
+
+**`method_condition_result` naming.** *A failing build should name the method that broke.*
+- Most test classes cover several operations — `existsByCode`, `findByCode` and `registerVisitCount` share one class — so the method under test comes first.
+- `with...` for a property of the input (`withUnknownCode`), `when...` for a state of the system (`whenRetriesAreExhausted`).
+- The result is the observable outcome, including the status code in web-layer tests (`returns410WithFailingCode`).
+- One exception: `ShortlinkQrApplicationTests.contextLoads()` has no method under test — it asserts that the Spring context starts — and it is the name Spring Initializr generates.
 
 **Testing principles:**
 - **Strict HTTP assertions:** The redirect test asserts `302 Found`, not a generic `3xx`. A `301` would ruin the retargeting promise, so the test must be as strict as the business rule.

@@ -17,7 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(controllers = RedirectController.class,
         properties = "shortlink.base-url=http://short.test")
-public class RedirectControllerTest {
+class RedirectControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -26,7 +26,7 @@ public class RedirectControllerTest {
     private ShortLinkService shortLinkService;
 
     @Test
-    void redirect_existingCode_returns302WithLocationHeader() throws Exception {
+    void redirect_withExistingCode_returns302WithLocationHeader() throws Exception {
 
         when(shortLinkService.resolveCode("mi-repo"))
                 .thenReturn("https://example.com");
@@ -38,7 +38,7 @@ public class RedirectControllerTest {
     }
 
     @Test
-    void redirect_expiredCode_returns410WithFailingCode() throws Exception {
+    void redirect_withExpiredCode_returns410WithFailingCode() throws Exception {
 
         when(shortLinkService.resolveCode("expired"))
                 .thenThrow(new ShortLinkExpiredException("expired"));
