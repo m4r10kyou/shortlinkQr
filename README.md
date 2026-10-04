@@ -137,6 +137,7 @@ Three levels, each with a different cost and purpose:
 - **Unified assertion style:** AssertJ is used exclusively across the suite to maintain semantic readability and avoid mixing assertion libraries.
 - **Database integrity:** Failure-path tests also explicitly verify that no visit is recorded.
 - **Round-trip testing:** *Generate, decode, and compare with the original URL.* This is the only assertion that proves the image can actually be scanned. It is also the instrument that will be used to measure how far the logo can grow.
+- **Decoding without the detector:** Round-trip tests decode with `PURE_BARCODE`. Without that hint ZXing locates the finder patterns and resamples through a perspective transform, and for some module patterns a sample point lands on a module boundary: one code in ten failed to decode from a perfectly generated PNG. The pre-existing round-trip test was green only because its URL happened to fall on the right side of that.
 
 ## ⚠️ Known Limitations
 
