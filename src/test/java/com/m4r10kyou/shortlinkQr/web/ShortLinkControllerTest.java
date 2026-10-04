@@ -28,19 +28,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(controllers = ShortLinkController.class,
         properties = "shortlink.base-url=http://short.test")
-public class ShortLinkControllerTest {
+class ShortLinkControllerTest {
 
     @Autowired
-    MockMvc mockMvc;
+    private MockMvc mockMvc;
 
     @MockitoBean
-    ShortLinkService shortLinkService;
+    private ShortLinkService shortLinkService;
 
     @MockitoBean
-    QrCodeGenerator qrCodeGenerator;
+    private QrCodeGenerator qrCodeGenerator;
 
     @Test
-    void createLink_validRequest_returns201AndTrimsUrl() throws Exception {
+    void createLink_withValidRequest_returns201AndTrimsUrl() throws Exception {
 
         String json = """
                 {
@@ -94,7 +94,7 @@ public class ShortLinkControllerTest {
 
 
     @Test
-    void getQrCode_validRequest_returns200WithPngImage() throws Exception {
+    void getQrCode_withValidRequest_returns200WithPngImage() throws Exception {
 
         ShortLink shortLink = new ShortLink("mi-repo", "https://example.com",null);
 

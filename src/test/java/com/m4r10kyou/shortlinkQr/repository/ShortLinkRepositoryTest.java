@@ -12,10 +12,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DataJpaTest
-public class ShortLinkRepositoryTest {
+class ShortLinkRepositoryTest {
 
     @Autowired
-    ShortLinkRepository repository;
+    private ShortLinkRepository repository;
 
     @BeforeEach
     void setUpShortLinkFixtures() {
@@ -32,7 +32,7 @@ public class ShortLinkRepositoryTest {
     }
 
     @Test
-    void returnsTrueWhenCodeExists() {
+    void existsByCode_withExistingCode_returnsTrue() {
 
         boolean existMenuWinter = repository.existsByCode("DimondiWinter26");
 
@@ -40,7 +40,7 @@ public class ShortLinkRepositoryTest {
     }
 
     @Test
-    void returnsFalseWhenCodeDoesNotExist() {
+    void existsByCode_withUnknownCode_returnsFalse() {
 
         boolean existMenuAutumn = repository.existsByCode("DimondiAutumn26");
 
@@ -48,7 +48,7 @@ public class ShortLinkRepositoryTest {
     }
 
     @Test
-    void findsLinkByItsCode() {
+    void findByCode_withExistingCode_returnsTheLink() {
 
         Optional<ShortLink> found = repository.findByCode("DimondiSummer26");
 
@@ -58,7 +58,7 @@ public class ShortLinkRepositoryTest {
 
 
     @Test
-    void returnsEmptyWhenCodeNotFound() {
+    void findByCode_withUnknownCode_returnsEmpty() {
 
         Optional<ShortLink> found = repository.findByCode("DimondiSpring26");
 
@@ -66,7 +66,7 @@ public class ShortLinkRepositoryTest {
     }
 
     @Test
-    void incrementsVisitCountByOne() {
+    void registerVisitCount_withExistingCode_increasesCountByOne() {
 
         Optional<ShortLink> found = repository.findByCode("DimondiSummer26");
         int visitsOrigin = found.orElseThrow().getVisitCount();

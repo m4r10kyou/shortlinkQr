@@ -13,12 +13,12 @@ import java.io.ByteArrayInputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class QrCodeGeneratorTest {
+class QrCodeGeneratorTest {
 
     private final QrCodeGenerator generator = new QrCodeGenerator(512);
 
     @Test
-    void decodesBackToTheOriginalUrl() throws Exception {
+    void generate_withAUrl_decodesBackToTheOriginalUrl() throws Exception {
 
         String originalUrl = "https://example.com/roundtrip-test";
 
@@ -34,7 +34,7 @@ public class QrCodeGeneratorTest {
     }
 
     @Test
-    void generationIsDeterministic(){
+    void generate_withTheSameUrlTwice_returnsIdenticalBytes(){
 
         String originalUrl = "https://example.com/deterministic-test";
 

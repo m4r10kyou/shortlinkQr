@@ -1,22 +1,14 @@
 package com.m4r10kyou.shortlinkQr.validation;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+class HttpUrlValidatorTest {
 
-public class HttpUrlValidatorTest {
-
-    private HttpUrlValidator  httpUrlValidator;
-
-    @BeforeEach
-    public void setUp() {
-
-        this.httpUrlValidator = new HttpUrlValidator();
-    }
+    private final HttpUrlValidator httpUrlValidator = new HttpUrlValidator();
 
     /*
      * NOTE ABOUT THE CONTEXT:
@@ -31,12 +23,13 @@ public class HttpUrlValidatorTest {
             "https://example.com",
             "http://example.com/menu?season=1&dish=2"
     })
-    void acceptsValidUrls(String url) {
+    void isValid_withHttpAndHttpsUrls_returnsTrue(String url) {
+
         assertThat(httpUrlValidator.isValid(url, null)).isTrue();
     }
 
     @Test
-    void acceptsNullToRespectBeanValidationContract() {
+    void isValid_withNull_returnsTrue() {
 
         assertThat(httpUrlValidator.isValid(null, null)).isTrue();
     }
@@ -44,11 +37,19 @@ public class HttpUrlValidatorTest {
     @ParameterizedTest
     @ValueSource(strings = {
             "mailto:someone@example.com",
-            "ftp://files.example.com/x",
+            "ftp://files.example.com/x"
+    })
+    void isValid_withUnsupportedScheme_returnsFalse(String url) {
+
+        assertThat(httpUrlValidator.isValid(url, null)).isFalse();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
             "this-is-not-valid-url",
             ""
     })
-    void rejectsInvalidUrls(String url) {
+    void isValid_withoutSchemeOrHost_returnsFalse(String url) {
 
         assertThat(httpUrlValidator.isValid(url, null)).isFalse();
     }
@@ -58,16 +59,16 @@ public class HttpUrlValidatorTest {
     // A space in the URL breaks the HTTP redirection by generating an invalid Location header.
     // This test documents the original bug and prevents anyone from accidentally loosening the syntax check.
     @Test
-    void rejectsUrlWithSpaceThatWouldBreakTheRedirect() {
+    void isValid_withRawSpace_returnsFalse() {
 
         String withSpaceUrl = "http://restaurant.example.com/menu summer.pdf";
         assertThat(httpUrlValidator.isValid(withSpaceUrl, null)).isFalse();
     }
 
     @Test
-    void acceptsUrlWithPercentEncodedSpace() {
+    void isValid_withPercentEncodedSpace_returnsTrue() {
 
-        String withSpaceUrl = "http://restaurant.example.com/menu%20summer.pdf";
-        assertThat(httpUrlValidator.isValid(withSpaceUrl, null)).isTrue();;
+        String encodedSpaceUrl = "http://restaurant.example.com/menu%20summer.pdf";
+        assertThat(httpUrlValidator.isValid(encodedSpaceUrl, null)).isTrue();
     }
 }
