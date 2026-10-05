@@ -56,16 +56,30 @@ public class QrCodeGenerator {
          */
         try {
 
-            QRCodeWriter writer = new QRCodeWriter();
-            BitMatrix matrix = writer.encode(url, BarcodeFormat.QR_CODE, size, size, hints);
-            BufferedImage image = MatrixToImageWriter.toBufferedImage(matrix);
+            BufferedImage image = renderSymbol(url);
 
-            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-            ImageIO.write(image, FORMAT, outputStream);
+            return toPngBytes(image);
 
-            return outputStream.toByteArray();
         } catch (WriterException | IOException e) {
             throw new QrGenerationException("Cannot generate QR for the url: " + url, e);
         }
+    }
+
+    private BufferedImage renderSymbol(String url) throws WriterException {
+
+        QRCodeWriter writer = new QRCodeWriter();
+        BitMatrix matrix = writer.encode(url, BarcodeFormat.QR_CODE, size, size, hints);
+        return MatrixToImageWriter.toBufferedImage(matrix);
+    }
+
+    /*
+     *   No try-with-resources because ByteArrayOutputStream writes to an in-memory array,
+     *   not a System resource,so close() does nothing
+     */
+    private byte [] toPngBytes(BufferedImage image) throws IOException {
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        ImageIO.write(image, FORMAT, outputStream);
+
+        return outputStream.toByteArray();
     }
 }
