@@ -92,7 +92,7 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 
 **Error correction level H.** *Reed-Solomon error correction recovers around 30% of damaged codewords.*
 - Normally this level is paid for in capacity, but since what is being encoded here is about 30 characters, there is plenty of capacity: the maximum level comes for free.
-- This is what will allow a logo to cover part of the symbol without breaking readability.
+- This is what allows a logo to cover part of the symbol without breaking readability.
 
 **The symbol is not stored.** *It is a deterministic function of the short URL.*
 - The same input produces the same bytes, always. Storing it would be caching, not persistence. A test enforces this.
@@ -115,7 +115,14 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 - Production uses 25%, seven points below the measured ceiling. The margin is not timidity: the measurement decodes a perfect in-memory PNG with the most tolerant reader configuration available, while a real scan involves a phone camera, an angle, print quality and ambient light.
 - Between 33% and 37% success depends on the *content* of the link, because the module pattern and the mask differ per code. A feature that works for four links out of ten, with no way for the user to know which, is worse than a smaller logo.
 - Width, not area: 25% of the width covers about 6% of the surface. The ~30% figure for level H is a ceiling on recoverable codewords, not a budget for how much of the picture a logo may occupy.
+- The logo fills 80% of the plate, not all of it. That remaining ring is white on purpose: a logo reaching the plate edge would put its dark pixels against the dark modules and blur the boundary the scanner depends on. That 80% is a visual criterion, not a measurement.
+- The logo keeps its own aspect ratio. One scale factor, the smaller of the two candidates, is applied to both dimensions, so a 4:1 logo stays 4:1 and simply leaves more white on its short side.
 - The experiment is kept, disabled, in `QrLogoCoverageExperiment`. If the base URL ever gets longer, the symbol gains a version, its capacity changes and the ceiling has to be measured again.
+
+**The logo needs a colour canvas.** *`MatrixToImageWriter` returns a one-bit image.*
+- `toBufferedImage` produces a `TYPE_BYTE_BINARY` canvas: one bit per pixel, two colours. Drawing a colour logo onto it quantises every pixel to pure black or pure white — a dark red seal came out solid black, a blue icon came out as a white silhouette — and it flattens the antialiased corners of the plate at the same time.
+- `generateWithLogo` copies the symbol onto a `TYPE_INT_RGB` canvas first. `generate` does not: the plain QR stays one bit and its PNG is a fraction of the size, so only the path that needs colour pays for it.
+- `RGB`, not `ARGB`: the symbol covers the canvas entirely, so the result is opaque and an unused alpha channel would only add weight. A logo with transparency resolves against the white plate, which is why the plate is painted before the logo.
 
 ### Testing
 
@@ -136,7 +143,7 @@ Three levels, each with a different cost and purpose:
 - **Isolated configuration:** `@WebMvcTest` explicitly pins the `shortlink.base-url` property. Tests must control their own inputs and not fail simply because a production configuration file was modified.
 - **Unified assertion style:** AssertJ is used exclusively across the suite to maintain semantic readability and avoid mixing assertion libraries.
 - **Database integrity:** Failure-path tests also explicitly verify that no visit is recorded.
-- **Round-trip testing:** *Generate, decode, and compare with the original URL.* This is the only assertion that proves the image can actually be scanned. It is also the instrument that will be used to measure how far the logo can grow.
+- **Round-trip testing:** *Generate, decode, and compare with the original URL.* This is the only assertion that proves the image can actually be scanned. It is also the instrument used to measure how far the logo can grow.
 - **Decoding without the detector:** Round-trip tests decode with `PURE_BARCODE`. Without that hint ZXing locates the finder patterns and resamples through a perspective transform, and for some module patterns a sample point lands on a module boundary: one code in ten failed to decode from a perfectly generated PNG. The pre-existing round-trip test was green only because its URL happened to fall on the right side of that.
 
 ## ⚠️ Known Limitations
@@ -223,9 +230,9 @@ Last full run: 46 assertions, 46 passed.
    - [x] Management endpoints
    - [x] Public redirect endpoint
    - [x] HTTP error mapping
-- [ ] **QR code generation**
+- [x] **QR code generation**
    - [x] QR rendering
-   - [ ] Logo embedding
+   - [x] Logo embedding
 - [ ] **Deployment**
    - [ ] Dockerfile
    - [ ] PostgreSQL profile
