@@ -1,8 +1,15 @@
 package com.m4r10kyou.shortlinkQr.domain;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Lob;
+import jakarta.persistence.Table;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Objects;
 
 @Entity
@@ -26,9 +33,6 @@ public class ShortLink {
 
     @Lob
     private byte[] logoData;
-
-    @Enumerated(EnumType.STRING)
-    private LogoContentType logoContentType;
 
     @Column(nullable = false)
     private int visitCount;
@@ -55,11 +59,12 @@ public class ShortLink {
     }
 
     public byte[] getLogoData() {
-        return logoData;
-    }
 
-    public LogoContentType getLogoContentType() {
-        return logoContentType;
+        if(hasLogo()) {
+            return Arrays.copyOf(this.logoData, this.logoData.length);
+        }else{
+            return null;
+        }
     }
 
     public int getVisitCount() {
@@ -87,36 +92,21 @@ public class ShortLink {
         this.targetUrl = url;
     }
 
-    public void attachLogo(byte[] logoData, LogoContentType contentType) {
+    public void attachLogo(byte[] logoData) {
 
         Objects.requireNonNull(logoData, "Logo cannot be null");
-        Objects.requireNonNull(contentType, "ContentType cannot be null");
 
         if (logoData.length == 0) {
 
             throw new IllegalArgumentException("Logo array cannot be empty");
         }
 
-        this.logoData = logoData;
-        this.logoContentType = contentType;
+        this.logoData = Arrays.copyOf(logoData, logoData.length);
     }
 
     public void removeLogo() {
 
-        this.logoContentType = null;
         this.logoData = null;
-    }
-
-    public boolean isExpired() {
-
-        Instant expiration = this.expiresAt;
-
-        if (null == expiration) {
-
-            return false;
-        }
-
-        return Instant.now().isAfter(expiration);
     }
 
     public boolean hasLogo() {

@@ -46,6 +46,13 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 - `set visit_count = visit_count + 1 where code = ?` lets the database serialise it
 - Optimistic and pessimistic locking would also be correct, but for a commutative increment they add retries or contention for nothing
 
+### Redirect path
+
+**The redirect reads two columns.** *A projection, not the entity.*
+- `resolveCode` needs the target URL and the expiry date. Loading the `ShortLink` entity fetched every column, including the `@Lob` holding the logo bytes, on the endpoint that every scan of every printed QR hits.
+- A `RedirectTarget` projection narrows the query to `select target_url, expires_at from short_links where code = ?`. The logo never leaves the database on that path.
+- The expiry rule lives in `ExpirationPolicy`, shared by the entity and the service, so "expired" has one definition rather than one per caller.
+
 ### Domain modelling
 
 **`Instant`, not `LocalDateTime`.** *Using absolute points on the timeline prevents critical bugs when evaluating expirations across different time zones*
@@ -54,7 +61,7 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 
 **Behaviour over setters.** *The entity encapsulates its own logic and state transitions to guarantee internal consistency at all times*
 - The entity exposes `changeTargetUrl`, `attachLogo`, `removeLogo` instead of a setter per field
-- `attachLogo` takes the bytes and the content type together, so the pair can never be left inconsistent
+- `attachLogo` and `getLogoData` copy the array on the way in and on the way out. A `byte[]` is mutable, unlike the `String` fields around it, so handing out the internal reference would let any caller rewrite the entity's state without going through a method — which is what this section exists to prevent. Two tests pin it.
 
 **Exceptions carry no HTTP semantics.** *Domain errors remain agnostic to the web transport layer, ensuring reusability across the different contexts*
 - Plain `RuntimeException` subclasses, no `@ResponseStatus`

@@ -4,6 +4,7 @@ import com.m4r10kyou.shortlinkQr.domain.ShortLink;
 import com.m4r10kyou.shortlinkQr.exception.AliasAlreadyExistsException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkExpiredException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkNotFoundException;
+import com.m4r10kyou.shortlinkQr.repository.RedirectTarget;
 import com.m4r10kyou.shortlinkQr.repository.ShortLinkRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -91,9 +92,10 @@ class ShortLinkServiceTest {
 
         String target = "https://example.com";
         String code = "valid";
-        ShortLink link = new ShortLink(code, target, null);
 
-        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
+        RedirectTarget redirectTarget = redirectTargetExpiringAt(target,null);
+
+        when(shortLinkRepository.findTargetByCode(code)).thenReturn(Optional.of(redirectTarget));
 
         String result = shortLinkService.resolveCode(code);
 
@@ -107,7 +109,7 @@ class ShortLinkServiceTest {
 
         String code = "not-exist";
 
-        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.empty());
+        when(shortLinkRepository.findTargetByCode(code)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> shortLinkService.resolveCode(code))
                 .isInstanceOf(ShortLinkNotFoundException.class)
@@ -122,9 +124,9 @@ class ShortLinkServiceTest {
         String target = "https://example.com";
         String code = "expired";
         Instant pastExpiration = Instant.now().minus(1, ChronoUnit.HOURS);
-        ShortLink link = new ShortLink(code, target, pastExpiration);
+        RedirectTarget redirectTarget = redirectTargetExpiringAt(target ,pastExpiration);
 
-        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
+        when(shortLinkRepository.findTargetByCode(code)).thenReturn(Optional.of(redirectTarget));
 
         assertThatThrownBy(() -> shortLinkService.resolveCode(code))
                 .isInstanceOf(ShortLinkExpiredException.class)
@@ -162,5 +164,21 @@ class ShortLinkServiceTest {
         ShortLink result = shortLinkService.updateDestination(code, newTarget);
 
         assertThat(result.getTargetUrl()).isEqualTo(newTarget);
+    }
+
+    private RedirectTarget redirectTargetExpiringAt(String url, Instant when){
+
+        return new RedirectTarget() {
+
+            @Override
+            public String getTargetUrl() {
+                return url;
+            }
+
+            @Override
+            public Instant getExpiresAt() {
+                return when;
+            }
+        };
     }
 }

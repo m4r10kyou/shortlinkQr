@@ -1,9 +1,11 @@
 package com.m4r10kyou.shortlinkQr.service;
 
+import com.m4r10kyou.shortlinkQr.domain.ExpirationPolicy;
 import com.m4r10kyou.shortlinkQr.domain.ShortLink;
 import com.m4r10kyou.shortlinkQr.exception.AliasAlreadyExistsException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkExpiredException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkNotFoundException;
+import com.m4r10kyou.shortlinkQr.repository.RedirectTarget;
 import com.m4r10kyou.shortlinkQr.repository.ShortLinkRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,15 +57,17 @@ public class ShortLinkService {
     @Transactional
     public String resolveCode(String code) {
 
-        ShortLink  shortLink = this.getByCode(code);
+        RedirectTarget target = shortLinkRepository.findTargetByCode(code)
+                .orElseThrow( () -> new ShortLinkNotFoundException(code));
 
-        if (shortLink.isExpired()) {
+
+        if (ExpirationPolicy.isExpired(target.getExpiresAt())) {
             throw new ShortLinkExpiredException(code);
         }
 
         shortLinkRepository.registerVisitCount(code);
 
-        return shortLink.getTargetUrl();
+        return target.getTargetUrl();
     }
 
     @Transactional
