@@ -131,6 +131,21 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 - `generateWithLogo` copies the symbol onto a `TYPE_INT_RGB` canvas first. `generate` does not: the plain QR stays one bit and its PNG is a fraction of the size, so only the path that needs colour pays for it.
 - `RGB`, not `ARGB`: the symbol covers the canvas entirely, so the result is opaque and an unused alpha channel would only add weight. A logo with transparency resolves against the white plate, which is why the plate is painted before the logo.
 
+### Logo uploads
+
+**Uploaded logos are sanitized, not inspected.** *The only verifiable thing about an upload is its bytes.*
+- The declared content type and the filename are written by the client. An executable renamed to `logo.png` declares `image/png` quite happily, and a valid PNG from a careless client may declare `application/octet-stream`. Both are hints, never guarantees.
+- What decides is the reader lookup: `ImageIO.getImageReaders` picks a reader by sniffing the magic number in the header, so the verdict comes from the content and not from a label. Hand-rolling a table of byte prefixes would duplicate that and do it worse, missing the format variants the SPI already knows.
+- The image is then decoded and re-encoded to PNG, and whatever was not pixel data does not survive the round trip. A test appends a PHP payload after the PNG `IEND` chunk — a file that is a valid image *and* a valid script, which is how a polyglot gets through a careless upload — and asserts it comes back out gone.
+- Reading index 0 comes free with the same property: an animated GIF arrives animated and leaves as a static first frame, a multi-page TIFF leaves as its first page.
+
+**Validation reads the header before it decodes.** *A 40 KB PNG can declare 30000x30000 pixels.*
+- Decoding that first would ask the heap for several gigabytes and take the process down with one small request. So dimensions come from `getWidth(0)`/`getHeight(0)` on the reader, which parses the header only, and the pixels are decoded last.
+- The same reader is reused for that decode rather than going back through `ImageIO.read`. Reopening the stream would re-parse the file, and it would also mean the bytes that were measured and the bytes that get decoded are not provably the same bytes.
+- A malformed or truncated file raises an `IOException` during the decode — the header can promise 100x100 with the pixel data cut off halfway. It is wrapped as `InvalidLogoException`, because the bytes are the client's: a 400, not a 500. The same `IOException` maps to a different status depending on whose fault the bytes are, which is why `QrCodeGenerator` wraps its own into `QrGenerationException` instead.
+- The size limit is checked again on the *output*. A 900 KB lossy JPEG re-encoded as lossless PNG can come out several megabytes, so a file that passed every input limit can still produce a `@Lob` nobody wants.
+- The limits come from properties, not constants. Not only for configurability: injecting them is what lets a test exercise the dimension checks without fabricating an oversized fixture.
+
 ### Testing
 
 Three levels, each with a different cost and purpose:
