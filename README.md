@@ -156,6 +156,16 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 - `shortlink.logo.max-stored-bytes` is a larger number, checked after the re-encode. A 900 KB lossy JPEG becomes a lossless PNG of several megabytes, so a file that passed every input limit can still produce a `@Lob` nobody wants. A single shared limit would reject it only after doing all the work.
 - All four logo limits are properties rather than constants. Not only for configurability: injecting them is what lets a test exercise the dimension and size checks without fabricating an oversized fixture.
 
+**The endpoint measures before it materialises.** *The same rule as the decoder, one layer up.*
+- `getSize()` and `getContentType()` read the part's metadata and cost nothing; `getBytes()` copies the whole file into heap. The controller validates first and materialises second, so a rejected upload is never held in memory in order to announce that it is too big.
+- The 413 for an oversized upload is the container's, not ours: Tomcat enforces `max-file-size` while reading the request, so the controller method is never entered. Verified with a real 5 MB upload rather than assumed — Spring already maps the exception, so no handler of ours was needed. It is also the only error in this API without a `type`, since that response is the framework's.
+- The response is 200, not 201. Nothing is created at a new URL: an existing link gains a logo, and the logo has no address of its own. The body is the updated link, so the client learns `hasLogo` without a second request.
+
+**Sanitising happens outside the transaction.** *Decoding an image is CPU work and has no business holding a database connection.*
+- The controller validates and sanitises; the service method's `@Transactional` covers only loading the link and attaching the bytes.
+- The other way round would hold a pooled connection for the whole decode and re-encode. Under concurrent uploads the pool empties while the database itself sits idle — the kind of incident where an hour goes into looking at the wrong machine.
+- The cost is that a request for a code that does not exist is rejected after the image has been processed rather than before: a worse ordering of error messages in exchange for a better failure mode under load.
+
 ### Testing
 
 Three levels, each with a different cost and purpose:
@@ -184,6 +194,7 @@ Three levels, each with a different cost and purpose:
 - **Problem Types are URNs:** The `type` fields in the error responses are URNs, not dereferenceable URLs. This is a conscious decision not to invent a documentation URL that does not actually exist.
 - **No mutations yet:** There are no `PATCH` or `DELETE` endpoints. The short code is public by design (it is printed on signs), so it cannot serve as a credential to modify the link. An authorization mechanism must be built first, and is planned.
 - **Persistence is not covered by tests.** `updateDestination` and `attachLogo` rely on Hibernate's dirty checking inside `@Transactional`, with no explicit `save`. The service tests are Mockito unit tests with no `EntityManager`, so they prove the entity is mutated but not that the change is ever flushed. Removing `@Transactional` from either method would break the feature silently and leave every test green. Closing this gap needs a `@DataJpaTest` against a real persistence context.
+- **The management GET loads the logo to answer a boolean.** `getByCode` fetches the whole entity, `@Lob` included, and `hasLogo` is derived from it. A `@Basic(fetch = LAZY)` on a basic attribute does nothing without bytecode enhancement, so the blob travels on every read of a link that has one. The redirect path already avoids this with a projection; the management path would need its own.
 
 ## 🛠️ Tech Stack
 - **Java 21**
