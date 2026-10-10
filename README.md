@@ -139,12 +139,22 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 - The image is then decoded and re-encoded to PNG, and whatever was not pixel data does not survive the round trip. A test appends a PHP payload after the PNG `IEND` chunk — a file that is a valid image *and* a valid script, which is how a polyglot gets through a careless upload — and asserts it comes back out gone.
 - Reading index 0 comes free with the same property: an animated GIF arrives animated and leaves as a static first frame, a multi-page TIFF leaves as its first page.
 
+**The content type is checked even though it proves nothing.** *A filter for the honest mistake, not for the attacker.*
+- Checking it costs nothing and turns an "unsupported image format" three layers down into "we do not accept application/zip" at the door. The attacker renames his file and sails past it; the user who picked the wrong file in a dialog gets told what is wrong. That second person is who the check is for.
+- The allowed list is restricted to what this JVM can actually read, and a test asserts it against `ImageIO.getReaderMIMETypes()`. Accepting a type the decoder cannot handle would produce two different errors for one cause, and the user would understand neither.
+- `image/svg+xml` is why the check is a list and not an `image/` prefix. An SVG is an image by content type and XML by content, so a prefix check would walk it straight to a decoder that cannot read it, and XML is a class of problem of its own.
+- The comparison ignores case and tolerates parameters: `IMAGE/PNG` and `image/jpeg; charset=utf-8` are both legal HTTP, and rejecting them would be rejecting correct clients.
+
 **Validation reads the header before it decodes.** *A 40 KB PNG can declare 30000x30000 pixels.*
 - Decoding that first would ask the heap for several gigabytes and take the process down with one small request. So dimensions come from `getWidth(0)`/`getHeight(0)` on the reader, which parses the header only, and the pixels are decoded last.
 - The same reader is reused for that decode rather than going back through `ImageIO.read`. Reopening the stream would re-parse the file, and it would also mean the bytes that were measured and the bytes that get decoded are not provably the same bytes.
 - A malformed or truncated file raises an `IOException` during the decode — the header can promise 100x100 with the pixel data cut off halfway. It is wrapped as `InvalidLogoException`, because the bytes are the client's: a 400, not a 500. The same `IOException` maps to a different status depending on whose fault the bytes are, which is why `QrCodeGenerator` wraps its own into `QrGenerationException` instead.
-- The size limit is checked again on the *output*. A 900 KB lossy JPEG re-encoded as lossless PNG can come out several megabytes, so a file that passed every input limit can still produce a `@Lob` nobody wants.
-- The limits come from properties, not constants. Not only for configurability: injecting them is what lets a test exercise the dimension checks without fabricating an oversized fixture.
+
+**Upload size is limited at two layers, with two different numbers.** *The container's limit is not the application's limit.*
+- `spring.servlet.multipart.max-file-size` and `max-request-size` are enforced by Tomcat before the controller method exists. Both are set, because the first caps each part and the second the whole body: with only the first, twenty parts of 1 MB each still arrive.
+- `shortlink.logo.max-upload-bytes` repeats that limit inside the application, because a validator cannot depend on a framework property it does not own.
+- `shortlink.logo.max-stored-bytes` is a larger number, checked after the re-encode. A 900 KB lossy JPEG becomes a lossless PNG of several megabytes, so a file that passed every input limit can still produce a `@Lob` nobody wants. A single shared limit would reject it only after doing all the work.
+- All four logo limits are properties rather than constants. Not only for configurability: injecting them is what lets a test exercise the dimension and size checks without fabricating an oversized fixture.
 
 ### Testing
 

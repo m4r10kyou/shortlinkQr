@@ -18,16 +18,16 @@ public class LogoImageProcessor {
 
     private static final String FORMAT = "PNG";
 
-    private final int maxBytes;
+    private final int maxStoredBytes;
     private final int minDimension;
     private final int maxDimension;
 
-    public LogoImageProcessor(@Value("${shortlink.logo.max-bytes:1048576}") int maxBytes,
+    public LogoImageProcessor(@Value("${shortlink.logo.max-stored-bytes:4194304}") int maxStoredBytes,
                               @Value("${shortlink.logo.min-dimension:32}") int minDimension,
                               @Value("${shortlink.logo.max-dimension:2000}") int maxDimension
     ){
 
-        this.maxBytes = maxBytes;
+        this.maxStoredBytes = maxStoredBytes;
         this.minDimension = minDimension;
         this.maxDimension = maxDimension;
     }
@@ -79,7 +79,7 @@ public class LogoImageProcessor {
 
             byte[] outputBytes = baos.toByteArray();
 
-            if (outputBytes.length > maxBytes) {
+            if (outputBytes.length > maxStoredBytes) {
 
                 throw new InvalidLogoException("Converted image exceeds the maximum file size");
             }
