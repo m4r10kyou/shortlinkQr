@@ -78,4 +78,14 @@ public class ShortLinkService {
         shortLink.changeTargetUrl(newTargetUrl);
         return shortLink;
     }
+
+    @Transactional
+    public ShortLink attachLogo(String code, byte[] sanitizedBytes){
+
+        ShortLink  shortLink = this.getByCode(code);
+
+        shortLink.attachLogo(sanitizedBytes);
+
+        return shortLink;
+    }
 }

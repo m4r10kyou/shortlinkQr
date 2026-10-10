@@ -146,9 +146,6 @@ class ShortLinkServiceTest {
         assertThatThrownBy(() -> shortLinkService.updateDestination(code, target))
                 .isInstanceOf(ShortLinkNotFoundException.class)
                 .hasMessageContaining(code);
-
-        verify(shortLinkRepository, never()).save(any());
-
     }
 
     @Test
@@ -165,6 +162,38 @@ class ShortLinkServiceTest {
 
         assertThat(result.getTargetUrl()).isEqualTo(newTarget);
     }
+
+    @Test
+    void attachLogo_withNotFoundCode_throwsShortLinkNotFoundException(){
+
+        String code = "not-exist-code-attach-logo";
+        byte[] pngSignature = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47 , 0x0D , 0x0A , 0x1A , 0x0A  };
+
+        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> shortLinkService.attachLogo(code, pngSignature))
+                .isInstanceOf(ShortLinkNotFoundException.class)
+                .hasMessageContaining(code);
+    }
+
+    @Test
+    void attachLogo_withValidCode_storesTheLogo(){
+
+        String code = "my-repo";
+        String urlTarget = "https://new.example.com";
+        ShortLink link = new ShortLink(code, urlTarget, null);
+
+        byte[] pngSignature = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47 , 0x0D , 0x0A , 0x1A , 0x0A  };
+
+
+        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
+
+        ShortLink result = shortLinkService.attachLogo(code, pngSignature);
+
+        assertThat(result.hasLogo()).isTrue();
+        assertThat(result.getLogoData()).isEqualTo(pngSignature);
+    }
+
 
     private RedirectTarget redirectTargetExpiringAt(String url, Instant when){
 

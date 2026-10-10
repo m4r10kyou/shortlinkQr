@@ -183,6 +183,7 @@ Three levels, each with a different cost and purpose:
 - **JSON on public endpoints:** Scanning a dead, invalid, or expired QR code currently returns a JSON document in the browser. While correct for an API, it provides a poor experience for a human user. Pending: an HTML fallback page for the public redirect endpoint.
 - **Problem Types are URNs:** The `type` fields in the error responses are URNs, not dereferenceable URLs. This is a conscious decision not to invent a documentation URL that does not actually exist.
 - **No mutations yet:** There are no `PATCH` or `DELETE` endpoints. The short code is public by design (it is printed on signs), so it cannot serve as a credential to modify the link. An authorization mechanism must be built first, and is planned.
+- **Persistence is not covered by tests.** `updateDestination` and `attachLogo` rely on Hibernate's dirty checking inside `@Transactional`, with no explicit `save`. The service tests are Mockito unit tests with no `EntityManager`, so they prove the entity is mutated but not that the change is ever flushed. Removing `@Transactional` from either method would break the feature silently and leave every test green. Closing this gap needs a `@DataJpaTest` against a real persistence context.
 
 ## 🛠️ Tech Stack
 - **Java 21**
