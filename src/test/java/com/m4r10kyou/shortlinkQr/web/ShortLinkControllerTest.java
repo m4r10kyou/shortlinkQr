@@ -19,6 +19,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
@@ -103,30 +104,6 @@ class ShortLinkControllerTest {
                 .andExpect(jsonPath("$.code").value("notFound"));
     }
 
-
-    @Test
-    void getQrCode_withValidRequest_returns200WithPngImage() throws Exception {
-
-        ShortLink shortLink = new ShortLink("mi-repo", "https://example.com",null);
-
-        byte[] dummyImage = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47 };
-
-        String expectedUrl = "http://short.test/mi-repo";
-
-        when(shortLinkService.getByCode(shortLink.getCode())).thenReturn(shortLink);
-        when(qrCodeGenerator.generate(expectedUrl)).thenReturn(dummyImage);
-
-        mockMvc.perform(get("/api/links/{code}/qr", shortLink.getCode()))
-                .andExpect(status().isOk())
-                .andExpect(content().contentType(MediaType.IMAGE_PNG_VALUE))
-                .andExpect(content().bytes(dummyImage))
-                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("max-age=31536000")))
-                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("immutable")));
-
-        verify(qrCodeGenerator).generate(expectedUrl);
-        verify(shortLinkService, never()).resolveCode(any());
-    }
-
     @Test
     void uploadLogo_withValidRequest_returns200WithTheUpdatedLink() throws Exception {
 
@@ -142,7 +119,6 @@ class ShortLinkControllerTest {
                 originalBytes
         );
 
-
         shortLink.attachLogo(sanitizedBytes);
 
         when(logoImageProcessor.sanitize(any(byte[].class))).thenReturn(sanitizedBytes);
@@ -157,7 +133,6 @@ class ShortLinkControllerTest {
 
         verify(shortLinkService).attachLogo(code, sanitizedBytes);
     }
-
 
     @Test
     void uploadLogo_withAnInvalidFile_returns400() throws Exception {
@@ -182,7 +157,6 @@ class ShortLinkControllerTest {
                 .andExpect(jsonPath("$.type").value("urn:problem-type:invalid-logo"));
 
     }
-
 
     @Test
     void uploadLogo_withNotFoundCode_returns404() throws Exception {
@@ -212,7 +186,6 @@ class ShortLinkControllerTest {
 
     }
 
-
     @Test
     void uploadLogo_withoutTheFilePart_returns400() throws Exception {
 
@@ -221,5 +194,57 @@ class ShortLinkControllerTest {
         mockMvc.perform(MockMvcRequestBuilders
                 .multipart("/api/links/{code}/logo", code))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void getQrCode_withALinkThatHasALogo_returns200AndUsesTheBrandedGenerator() throws Exception {
+
+        ShortLink shortLink = new ShortLink("has-logo", "https://example.com",null);
+
+        byte[] logoBytes = new byte[] { 1, 2, 3 };
+        shortLink.attachLogo(logoBytes);
+
+        byte[] brandedQr = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47 };
+
+        String expectedUrl = "http://short.test/has-logo";
+
+        when(shortLinkService.getByCode(shortLink.getCode())).thenReturn(shortLink);
+
+        when(qrCodeGenerator.generateWithLogo(expectedUrl, logoBytes)).thenReturn(brandedQr);
+
+        mockMvc.perform(get("/api/links/{code}/qr", shortLink.getCode()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.IMAGE_PNG_VALUE))
+                .andExpect(content().bytes(brandedQr))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("max-age=300")));
+
+        verify(qrCodeGenerator, never()).generate(anyString());
+        verify(qrCodeGenerator).generateWithLogo(expectedUrl, logoBytes);
+        verify(shortLinkService, never()).resolveCode(any());
+
+    }
+
+    @Test
+    void getQrCode_withALinkWithoutALogo_returns200AndNeverUsesTheBrandedGenerator() throws Exception {
+
+        ShortLink shortLink = new ShortLink("no-logo", "https://example.com",null);
+
+        byte[] normalQr = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47 };
+
+        String expectedUrl = "http://short.test/no-logo";
+
+        when(shortLinkService.getByCode(shortLink.getCode())).thenReturn(shortLink);
+
+        when(qrCodeGenerator.generate(expectedUrl)).thenReturn(normalQr);
+
+        mockMvc.perform(get("/api/links/{code}/qr", shortLink.getCode()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.IMAGE_PNG_VALUE))
+                .andExpect(content().bytes(normalQr))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("max-age=300")));
+
+        verify(qrCodeGenerator).generate(expectedUrl);
+        verify(qrCodeGenerator, never()).generateWithLogo(anyString(), any(byte[].class));
+        verify(shortLinkService, never()).resolveCode(any());
     }
 }

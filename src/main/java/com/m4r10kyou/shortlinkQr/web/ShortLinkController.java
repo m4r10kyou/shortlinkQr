@@ -73,11 +73,11 @@ public class ShortLinkController {
     public ResponseEntity<byte[]> getQrCode(@PathVariable("code") String code){
 
         ShortLink shortLink =shortLinkService.getByCode(code);
-        String url = this.baseUrl + shortLink.getCode();
-        byte[] qrImage = qrGenerator.generate(url);
+
+        byte[] qrImage = generateQrImage(shortLink);
 
         return ResponseEntity.ok()
-                .cacheControl(CacheControl.maxAge(Duration.ofDays(365)).immutable())
+                .cacheControl(CacheControl.maxAge(Duration.ofMinutes(5)))
                 .body(qrImage);
     }
 
@@ -93,6 +93,18 @@ public class ShortLinkController {
         ShortLink shortLink = shortLinkService.attachLogo(code, sanitizedImgBytes);
 
         return ShortLinkResponse.from(shortLink, baseUrl);
+    }
+
+    private byte[] generateQrImage(ShortLink shortLink){
+
+        String url = this.baseUrl + shortLink.getCode();
+
+        if(shortLink.hasLogo()){
+
+            return qrGenerator.generateWithLogo(url, shortLink.getLogoData());
+        }
+
+        return  qrGenerator.generate(url);
     }
 
 }

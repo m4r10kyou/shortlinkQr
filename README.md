@@ -104,11 +104,12 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 **The symbol is not stored.** *It is a deterministic function of the short URL.*
 - The same input produces the same bytes, always. Storing it would be caching, not persistence. A test enforces this.
 
-**Cached forever, unlike the redirect.** *The image is immutable.*
-- The QR endpoint uses a long `max-age` plus `immutable`, while the redirect carries `no-cache`.
-- Two endpoints in the same project with opposite policies, each for a specific reason: what the QR encodes never changes, the destination it points to does.
+**Cached for five minutes, unlike the redirect.** *The symbol depends on the logo, and the logo can change.*
+- It used to carry `max-age=31536000, immutable`, which was honest while the QR was a function of the code alone: the same code always produced the same bytes. Once the symbol depends on a logo that can be uploaded and removed, `immutable` is a promise the endpoint cannot keep — a client that fetched the QR before an upload would serve the old one for a year without ever asking again.
+- Five minutes bounds that staleness without turning the endpoint into traffic. An `ETag` would be more precise, but the consumer of `/qr` is the owner of the link downloading an image to print, once: conditional requests would save bandwidth nobody is spending, and a tag computed wrong serves a stale image forever.
+- The redirect still carries `no-cache`. Two endpoints in the same project with opposite policies, each for its own reason: the image changes rarely, the destination it points to must be re-read every time.
 
-**Generating a QR is not scanning it.** *The endpoint reads with `getByCode`, never with `resolveCode`.*
+- **Generating a QR is not scanning it.** *The endpoint reads with `getByCode`, never with `resolveCode`.*
 - If it counted as a visit, the counter would go up every time someone opens the image to print it. A test prevents this.
 
 **PNG, not JPEG.** *A lossless format is required.*
@@ -192,7 +193,7 @@ Three levels, each with a different cost and purpose:
 
 - **JSON on public endpoints:** Scanning a dead, invalid, or expired QR code currently returns a JSON document in the browser. While correct for an API, it provides a poor experience for a human user. Pending: an HTML fallback page for the public redirect endpoint.
 - **Problem Types are URNs:** The `type` fields in the error responses are URNs, not dereferenceable URLs. This is a conscious decision not to invent a documentation URL that does not actually exist.
-- **No mutations yet:** There are no `PATCH` or `DELETE` endpoints. The short code is public by design (it is printed on signs), so it cannot serve as a credential to modify the link. An authorization mechanism must be built first, and is planned.
+- **Mutations are not authorized.** `POST /api/links/{code}/logo` changes a link, and the only thing it asks for is the short code — which is printed on signs, so it is not a secret and cannot work as a credential. Anyone who can read the sign can replace the logo on that QR. No `PATCH` or `DELETE` endpoint exists yet for the same reason, and the next branch is a per-link management token that gates all three.
 - **Persistence is not covered by tests.** `updateDestination` and `attachLogo` rely on Hibernate's dirty checking inside `@Transactional`, with no explicit `save`. The service tests are Mockito unit tests with no `EntityManager`, so they prove the entity is mutated but not that the change is ever flushed. Removing `@Transactional` from either method would break the feature silently and leave every test green. Closing this gap needs a `@DataJpaTest` against a real persistence context.
 - **The management GET loads the logo to answer a boolean.** `getByCode` fetches the whole entity, `@Lob` included, and `hasLogo` is derived from it. A `@Basic(fetch = LAZY)` on a basic attribute does nothing without bytecode enhancement, so the blob travels on every read of a link that has one. The redirect path already avoids this with a projection; the management path would need its own.
 
@@ -277,6 +278,7 @@ Last full run: 46 assertions, 46 passed.
 - [x] **QR code generation**
    - [x] QR rendering
    - [x] Logo embedding
+   - [x] Logo upload and sanitization
 - [ ] **Deployment**
    - [ ] Dockerfile
    - [ ] PostgreSQL profile
