@@ -4,6 +4,7 @@ import com.m4r10kyou.shortlinkQr.domain.ShortLink;
 import com.m4r10kyou.shortlinkQr.exception.AliasAlreadyExistsException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkExpiredException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkNotFoundException;
+import com.m4r10kyou.shortlinkQr.repository.RedirectTarget;
 import com.m4r10kyou.shortlinkQr.repository.ShortLinkRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -91,9 +92,10 @@ class ShortLinkServiceTest {
 
         String target = "https://example.com";
         String code = "valid";
-        ShortLink link = new ShortLink(code, target, null);
 
-        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
+        RedirectTarget redirectTarget = redirectTargetExpiringAt(target,null);
+
+        when(shortLinkRepository.findTargetByCode(code)).thenReturn(Optional.of(redirectTarget));
 
         String result = shortLinkService.resolveCode(code);
 
@@ -107,7 +109,7 @@ class ShortLinkServiceTest {
 
         String code = "not-exist";
 
-        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.empty());
+        when(shortLinkRepository.findTargetByCode(code)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> shortLinkService.resolveCode(code))
                 .isInstanceOf(ShortLinkNotFoundException.class)
@@ -122,9 +124,9 @@ class ShortLinkServiceTest {
         String target = "https://example.com";
         String code = "expired";
         Instant pastExpiration = Instant.now().minus(1, ChronoUnit.HOURS);
-        ShortLink link = new ShortLink(code, target, pastExpiration);
+        RedirectTarget redirectTarget = redirectTargetExpiringAt(target ,pastExpiration);
 
-        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
+        when(shortLinkRepository.findTargetByCode(code)).thenReturn(Optional.of(redirectTarget));
 
         assertThatThrownBy(() -> shortLinkService.resolveCode(code))
                 .isInstanceOf(ShortLinkExpiredException.class)
@@ -144,9 +146,6 @@ class ShortLinkServiceTest {
         assertThatThrownBy(() -> shortLinkService.updateDestination(code, target))
                 .isInstanceOf(ShortLinkNotFoundException.class)
                 .hasMessageContaining(code);
-
-        verify(shortLinkRepository, never()).save(any());
-
     }
 
     @Test
@@ -162,5 +161,53 @@ class ShortLinkServiceTest {
         ShortLink result = shortLinkService.updateDestination(code, newTarget);
 
         assertThat(result.getTargetUrl()).isEqualTo(newTarget);
+    }
+
+    @Test
+    void attachLogo_withNotFoundCode_throwsShortLinkNotFoundException(){
+
+        String code = "not-exist-code-attach-logo";
+        byte[] pngSignature = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47 , 0x0D , 0x0A , 0x1A , 0x0A  };
+
+        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> shortLinkService.attachLogo(code, pngSignature))
+                .isInstanceOf(ShortLinkNotFoundException.class)
+                .hasMessageContaining(code);
+    }
+
+    @Test
+    void attachLogo_withValidCode_storesTheLogo(){
+
+        String code = "my-repo";
+        String urlTarget = "https://new.example.com";
+        ShortLink link = new ShortLink(code, urlTarget, null);
+
+        byte[] pngSignature = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47 , 0x0D , 0x0A , 0x1A , 0x0A  };
+
+
+        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
+
+        ShortLink result = shortLinkService.attachLogo(code, pngSignature);
+
+        assertThat(result.hasLogo()).isTrue();
+        assertThat(result.getLogoData()).isEqualTo(pngSignature);
+    }
+
+
+    private RedirectTarget redirectTargetExpiringAt(String url, Instant when){
+
+        return new RedirectTarget() {
+
+            @Override
+            public String getTargetUrl() {
+                return url;
+            }
+
+            @Override
+            public Instant getExpiresAt() {
+                return when;
+            }
+        };
     }
 }

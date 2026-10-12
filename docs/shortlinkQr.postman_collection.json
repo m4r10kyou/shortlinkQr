@@ -590,6 +590,148 @@
           }
         }
       ]
+    },
+    {
+      "name": "5. QR & Logo",
+      "description": "The QR endpoint and the logo upload that feeds it. Runs last: it needs the code captured by request 01, and uploading a logo mutates that link.",
+      "item": [
+        {
+          "name": "24 - Get the QR before any logo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('served as a PNG', () => {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('image/png');",
+                  "});",
+                  "pm.test('cached for five minutes, not forever', () => {",
+                  "    const cc = pm.response.headers.get('Cache-Control');",
+                  "    pm.expect(cc).to.include('max-age=300');",
+                  "    pm.expect(cc).to.not.include('immutable');",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('plainQrSize', pm.response.stream.length);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/links/{{lastCode}}/qr", "host": ["{{baseUrl}}"], "path": ["api", "links", "{{lastCode}}", "qr"] },
+            "description": "The plain symbol, rendered from a one-bit canvas. Its size is stored so request 26 can prove the branded one is a different image.\n\nThe negative assertion on `immutable` is the regression guard for the cache decision: the header carried it until the QR started depending on a logo that can change."
+          }
+        },
+        {
+          "name": "25 - Upload a logo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK, not 201', () => pm.response.to.have.status(200));",
+                  "pm.test('the body is the updated link', () => {",
+                  "    pm.expect(pm.response.json().hasLogo).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "docs/postman-logo.png" }] },
+            "url": { "raw": "{{baseUrl}}/api/links/{{lastCode}}/logo", "host": ["{{baseUrl}}"], "path": ["api", "links", "{{lastCode}}", "logo"] },
+            "description": "200 and not 201: nothing is created at a new URL, an existing link gains a logo. The body is the updated link, so hasLogo arrives without a second request."
+          }
+        },
+        {
+          "name": "26 - Get the QR again",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('served as a PNG', () => {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('image/png');",
+                  "});",
+                  "pm.test('same cache policy as before', () => {",
+                  "    pm.expect(pm.response.headers.get('Cache-Control')).to.include('max-age=300');",
+                  "});",
+                  "pm.test('the branded symbol is a different, larger image', () => {",
+                  "    const plain = Number(pm.collectionVariables.get('plainQrSize'));",
+                  "    pm.expect(pm.response.stream.length).to.be.above(plain);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/links/{{lastCode}}/qr", "host": ["{{baseUrl}}"], "path": ["api", "links", "{{lastCode}}", "qr"] },
+            "description": "Same URL as request 24, different bytes. The size comparison is the cheapest assertion that proves the branch was taken: the plain symbol is written from a one-bit canvas, the branded one from TYPE_INT_RGB, so it is reliably larger.\n\nIt is also why this endpoint can no longer promise immutable."
+          }
+        },
+        {
+          "name": "27 - Upload something that is not an image",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+                  "pm.test('problem type identifies the failure', () => {",
+                  "    pm.expect(pm.response.json().type).to.eql('urn:problem-type:invalid-logo');",
+                  "});",
+                  "pm.test('no Java internals leak into the body', () => {",
+                  "    pm.expect(pm.response.text()).to.not.include('com.m4r10kyou');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "docs/postman-not-an-image.png" }] },
+            "url": { "raw": "{{baseUrl}}/api/links/{{lastCode}}/logo", "host": ["{{baseUrl}}"], "path": ["api", "links", "{{lastCode}}", "logo"] },
+            "description": "A text file with a .png extension. Postman declares image/png from the extension, so it clears the content-type check and is stopped by the magic-number reader lookup - which is the whole point of not trusting the declared type.\n\n400 and not 500: the bytes are the client's."
+          }
+        },
+        {
+          "name": "28 - Upload to a code that does not exist",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 Not Found', () => pm.response.to.have.status(404));",
+                  "pm.test('problem type identifies the failure', () => {",
+                  "    pm.expect(pm.response.json().type).to.eql('urn:problem-type:not-found');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "docs/postman-logo.png" }] },
+            "url": { "raw": "{{baseUrl}}/api/links/noexiste/logo", "host": ["{{baseUrl}}"], "path": ["api", "links", "noexiste", "logo"] },
+            "description": "The image is valid and gets sanitised before anything looks the code up, because sanitising happens outside the transaction. The 404 therefore arrives after the work, not before - a deliberate trade documented in the README."
+          }
+        }
+      ]
     }
   ]
 }
+

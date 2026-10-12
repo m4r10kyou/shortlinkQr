@@ -46,6 +46,13 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 - `set visit_count = visit_count + 1 where code = ?` lets the database serialise it
 - Optimistic and pessimistic locking would also be correct, but for a commutative increment they add retries or contention for nothing
 
+### Redirect path
+
+**The redirect reads two columns.** *A projection, not the entity.*
+- `resolveCode` needs the target URL and the expiry date. Loading the `ShortLink` entity fetched every column, including the `@Lob` holding the logo bytes, on the endpoint that every scan of every printed QR hits.
+- A `RedirectTarget` projection narrows the query to `select target_url, expires_at from short_links where code = ?`. The logo never leaves the database on that path.
+- The expiry rule lives in `ExpirationPolicy`, shared by the entity and the service, so "expired" has one definition rather than one per caller.
+
 ### Domain modelling
 
 **`Instant`, not `LocalDateTime`.** *Using absolute points on the timeline prevents critical bugs when evaluating expirations across different time zones*
@@ -54,7 +61,7 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 
 **Behaviour over setters.** *The entity encapsulates its own logic and state transitions to guarantee internal consistency at all times*
 - The entity exposes `changeTargetUrl`, `attachLogo`, `removeLogo` instead of a setter per field
-- `attachLogo` takes the bytes and the content type together, so the pair can never be left inconsistent
+- `attachLogo` and `getLogoData` copy the array on the way in and on the way out. A `byte[]` is mutable, unlike the `String` fields around it, so handing out the internal reference would let any caller rewrite the entity's state without going through a method — which is what this section exists to prevent. Two tests pin it.
 
 **Exceptions carry no HTTP semantics.** *Domain errors remain agnostic to the web transport layer, ensuring reusability across the different contexts*
 - Plain `RuntimeException` subclasses, no `@ResponseStatus`
@@ -97,9 +104,10 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 **The symbol is not stored.** *It is a deterministic function of the short URL.*
 - The same input produces the same bytes, always. Storing it would be caching, not persistence. A test enforces this.
 
-**Cached forever, unlike the redirect.** *The image is immutable.*
-- The QR endpoint uses a long `max-age` plus `immutable`, while the redirect carries `no-cache`.
-- Two endpoints in the same project with opposite policies, each for a specific reason: what the QR encodes never changes, the destination it points to does.
+**Cached for five minutes, unlike the redirect.** *The symbol depends on the logo, and the logo can change.*
+- It used to carry `max-age=31536000, immutable`, which was honest while the QR was a function of the code alone: the same code always produced the same bytes. Once the symbol depends on a logo that can be uploaded and removed, `immutable` is a promise the endpoint cannot keep — a client that fetched the QR before an upload would serve the old one for a year without ever asking again.
+- Five minutes bounds that staleness without turning the endpoint into traffic. An `ETag` would be more precise, but the consumer of `/qr` is the owner of the link downloading an image to print, once: conditional requests would save bandwidth nobody is spending, and a tag computed wrong serves a stale image forever.
+- The redirect still carries `no-cache`. Two endpoints in the same project with opposite policies, each for its own reason: the image changes rarely, the destination it points to must be re-read every time.
 
 **Generating a QR is not scanning it.** *The endpoint reads with `getByCode`, never with `resolveCode`.*
 - If it counted as a visit, the counter would go up every time someone opens the image to print it. A test prevents this.
@@ -123,6 +131,41 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 - `toBufferedImage` produces a `TYPE_BYTE_BINARY` canvas: one bit per pixel, two colours. Drawing a colour logo onto it quantises every pixel to pure black or pure white — a dark red seal came out solid black, a blue icon came out as a white silhouette — and it flattens the antialiased corners of the plate at the same time.
 - `generateWithLogo` copies the symbol onto a `TYPE_INT_RGB` canvas first. `generate` does not: the plain QR stays one bit and its PNG is a fraction of the size, so only the path that needs colour pays for it.
 - `RGB`, not `ARGB`: the symbol covers the canvas entirely, so the result is opaque and an unused alpha channel would only add weight. A logo with transparency resolves against the white plate, which is why the plate is painted before the logo.
+
+### Logo uploads
+
+**Uploaded logos are sanitized, not inspected.** *The only verifiable thing about an upload is its bytes.*
+- The declared content type and the filename are written by the client. An executable renamed to `logo.png` declares `image/png` quite happily, and a valid PNG from a careless client may declare `application/octet-stream`. Both are hints, never guarantees.
+- What decides is the reader lookup: `ImageIO.getImageReaders` picks a reader by sniffing the magic number in the header, so the verdict comes from the content and not from a label. Hand-rolling a table of byte prefixes would duplicate that and do it worse, missing the format variants the SPI already knows.
+- The image is then decoded and re-encoded to PNG, and whatever was not pixel data does not survive the round trip. A test appends a PHP payload after the PNG `IEND` chunk — a file that is a valid image *and* a valid script, which is how a polyglot gets through a careless upload — and asserts it comes back out gone.
+- Reading index 0 comes free with the same property: an animated GIF arrives animated and leaves as a static first frame, a multi-page TIFF leaves as its first page.
+
+**The content type is checked even though it proves nothing.** *A filter for the honest mistake, not for the attacker.*
+- Checking it costs nothing and turns an "unsupported image format" three layers down into "we do not accept application/zip" at the door. The attacker renames his file and sails past it; the user who picked the wrong file in a dialog gets told what is wrong. That second person is who the check is for.
+- The allowed list is restricted to what this JVM can actually read, and a test asserts it against `ImageIO.getReaderMIMETypes()`. Accepting a type the decoder cannot handle would produce two different errors for one cause, and the user would understand neither.
+- `image/svg+xml` is why the check is a list and not an `image/` prefix. An SVG is an image by content type and XML by content, so a prefix check would walk it straight to a decoder that cannot read it, and XML is a class of problem of its own.
+- The comparison ignores case and tolerates parameters: `IMAGE/PNG` and `image/jpeg; charset=utf-8` are both legal HTTP, and rejecting them would be rejecting correct clients.
+
+**Validation reads the header before it decodes.** *A 40 KB PNG can declare 30000x30000 pixels.*
+- Decoding that first would ask the heap for several gigabytes and take the process down with one small request. So dimensions come from `getWidth(0)`/`getHeight(0)` on the reader, which parses the header only, and the pixels are decoded last.
+- The same reader is reused for that decode rather than going back through `ImageIO.read`. Reopening the stream would re-parse the file, and it would also mean the bytes that were measured and the bytes that get decoded are not provably the same bytes.
+- A malformed or truncated file raises an `IOException` during the decode — the header can promise 100x100 with the pixel data cut off halfway. It is wrapped as `InvalidLogoException`, because the bytes are the client's: a 400, not a 500. The same `IOException` maps to a different status depending on whose fault the bytes are, which is why `QrCodeGenerator` wraps its own into `QrGenerationException` instead.
+
+**Upload size is limited at two layers, with two different numbers.** *The container's limit is not the application's limit.*
+- `spring.servlet.multipart.max-file-size` and `max-request-size` are enforced by Tomcat before the controller method exists. Both are set, because the first caps each part and the second the whole body: with only the first, twenty parts of 1 MB each still arrive.
+- `shortlink.logo.max-upload-bytes` repeats that limit inside the application, because a validator cannot depend on a framework property it does not own.
+- `shortlink.logo.max-stored-bytes` is a larger number, checked after the re-encode. A 900 KB lossy JPEG becomes a lossless PNG of several megabytes, so a file that passed every input limit can still produce a `@Lob` nobody wants. A single shared limit would reject it only after doing all the work.
+- All four logo limits are properties rather than constants. Not only for configurability: injecting them is what lets a test exercise the dimension and size checks without fabricating an oversized fixture.
+
+**The endpoint measures before it materialises.** *The same rule as the decoder, one layer up.*
+- `getSize()` and `getContentType()` read the part's metadata and cost nothing; `getBytes()` copies the whole file into heap. The controller validates first and materialises second, so a rejected upload is never held in memory in order to announce that it is too big.
+- The 413 for an oversized upload is the container's, not ours: Tomcat enforces `max-file-size` while reading the request, so the controller method is never entered. Verified with a real 5 MB upload rather than assumed — Spring already maps the exception, so no handler of ours was needed. It is also the only error in this API without a `type`, since that response is the framework's.
+- The response is 200, not 201. Nothing is created at a new URL: an existing link gains a logo, and the logo has no address of its own. The body is the updated link, so the client learns `hasLogo` without a second request.
+
+**Sanitising happens outside the transaction.** *Decoding an image is CPU work and has no business holding a database connection.*
+- The controller validates and sanitises; the service method's `@Transactional` covers only loading the link and attaching the bytes.
+- The other way round would hold a pooled connection for the whole decode and re-encode. Under concurrent uploads the pool empties while the database itself sits idle — the kind of incident where an hour goes into looking at the wrong machine.
+- The cost is that a request for a code that does not exist is rejected after the image has been processed rather than before: a worse ordering of error messages in exchange for a better failure mode under load.
 
 ### Testing
 
@@ -150,7 +193,9 @@ Three levels, each with a different cost and purpose:
 
 - **JSON on public endpoints:** Scanning a dead, invalid, or expired QR code currently returns a JSON document in the browser. While correct for an API, it provides a poor experience for a human user. Pending: an HTML fallback page for the public redirect endpoint.
 - **Problem Types are URNs:** The `type` fields in the error responses are URNs, not dereferenceable URLs. This is a conscious decision not to invent a documentation URL that does not actually exist.
-- **No mutations yet:** There are no `PATCH` or `DELETE` endpoints. The short code is public by design (it is printed on signs), so it cannot serve as a credential to modify the link. An authorization mechanism must be built first, and is planned.
+- **Mutations are not authorized.** `POST /api/links/{code}/logo` changes a link, and the only thing it asks for is the short code — which is printed on signs, so it is not a secret and cannot work as a credential. Anyone who can read the sign can replace the logo on that QR. No `PATCH` or `DELETE` endpoint exists yet for the same reason, and the next branch is a per-link management token that gates all three.
+- **Persistence is not covered by tests.** `updateDestination` and `attachLogo` rely on Hibernate's dirty checking inside `@Transactional`, with no explicit `save`. The service tests are Mockito unit tests with no `EntityManager`, so they prove the entity is mutated but not that the change is ever flushed. Removing `@Transactional` from either method would break the feature silently and leave every test green. Closing this gap needs a `@DataJpaTest` against a real persistence context.
+- **The management GET loads the logo to answer a boolean.** `getByCode` fetches the whole entity, `@Lob` included, and `hasLogo` is derived from it. A `@Basic(fetch = LAZY)` on a basic attribute does nothing without bytecode enhancement, so the blob travels on every read of a link that has one. The redirect path already avoids this with a projection; the management path would need its own.
 
 ## 🛠️ Tech Stack
 - **Java 21**
@@ -199,7 +244,11 @@ executable specification. Import it into Postman and run it with the Collection
 Runner: every request asserts its expected status and body, so the result is a
 pass/fail report rather than something to inspect by eye.
 
-Twenty-three requests across four folders:
+Three requests upload a file from `docs/`, referenced relatively, so set
+Postman's working directory (Settings → General) to the repository root before
+running the collection.
+
+Twenty-eight requests across five folders:
 
 - **Links API** — creation and retrieval, including the alias conflict. The
   generated code is captured into a variable, so later requests need no manual
@@ -211,8 +260,11 @@ Twenty-three requests across four folders:
   returned 500.
 - **Redirect** — the public endpoint, asserting 302 specifically and that the
   response is not cacheable.
+- **QR & Logo** — the QR endpoint before and after an upload, asserting that the
+  branded symbol comes back as a different, larger image; plus a rejected file
+  and an unknown code.
 
-Last full run: 46 assertions, 46 passed.
+Last full run: 60 assertions, 60 passed.
 
 ## 📋 Project Status
 
@@ -233,6 +285,7 @@ Last full run: 46 assertions, 46 passed.
 - [x] **QR code generation**
    - [x] QR rendering
    - [x] Logo embedding
+   - [x] Logo upload and sanitization
 - [ ] **Deployment**
    - [ ] Dockerfile
    - [ ] PostgreSQL profile

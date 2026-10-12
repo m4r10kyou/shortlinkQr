@@ -1,6 +1,7 @@
 package com.m4r10kyou.shortlinkQr.web;
 
 import com.m4r10kyou.shortlinkQr.exception.AliasAlreadyExistsException;
+import com.m4r10kyou.shortlinkQr.exception.InvalidLogoException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkExpiredException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkNotFoundException;
 import org.slf4j.Logger;
@@ -73,6 +74,21 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         problem.setTitle("Short link expired");
         problem.setType(URI.create("urn:problem-type:link-expired"));
         problem.setProperty("code", ex.getCode());
+
+        return problem;
+    }
+
+    @ExceptionHandler(InvalidLogoException.class)
+    public ProblemDetail handleUploadedLogo(InvalidLogoException ex){
+
+        log.debug("Invalid logo upload" , ex);
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
+        );
+        problem.setTitle("Invalid logo");
+        problem.setType(URI.create("urn:problem-type:invalid-logo"));
 
         return problem;
     }

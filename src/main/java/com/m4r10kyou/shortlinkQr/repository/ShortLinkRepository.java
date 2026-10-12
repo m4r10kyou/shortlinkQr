@@ -17,4 +17,6 @@ public interface ShortLinkRepository extends JpaRepository<ShortLink, Long> {
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE ShortLink s SET s.visitCount = s.visitCount + 1 WHERE s.code = :code")
     void registerVisitCount(@Param("code") String code);
+
+    Optional<RedirectTarget> findTargetByCode(String code);
 }

@@ -6,4 +6,9 @@ public class InvalidLogoException extends RuntimeException {
 
         super(message);
     }
+
+    public InvalidLogoException(String message,Throwable cause) {
+
+        super(message, cause);
+    }
 }
