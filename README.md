@@ -109,7 +109,7 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 - Five minutes bounds that staleness without turning the endpoint into traffic. An `ETag` would be more precise, but the consumer of `/qr` is the owner of the link downloading an image to print, once: conditional requests would save bandwidth nobody is spending, and a tag computed wrong serves a stale image forever.
 - The redirect still carries `no-cache`. Two endpoints in the same project with opposite policies, each for its own reason: the image changes rarely, the destination it points to must be re-read every time.
 
-- **Generating a QR is not scanning it.** *The endpoint reads with `getByCode`, never with `resolveCode`.*
+**Generating a QR is not scanning it.** *The endpoint reads with `getByCode`, never with `resolveCode`.*
 - If it counted as a visit, the counter would go up every time someone opens the image to print it. A test prevents this.
 
 **PNG, not JPEG.** *A lossless format is required.*
@@ -244,7 +244,11 @@ executable specification. Import it into Postman and run it with the Collection
 Runner: every request asserts its expected status and body, so the result is a
 pass/fail report rather than something to inspect by eye.
 
-Twenty-three requests across four folders:
+Three requests upload a file from `docs/`, referenced relatively, so set
+Postman's working directory (Settings → General) to the repository root before
+running the collection.
+
+Twenty-eight requests across five folders:
 
 - **Links API** — creation and retrieval, including the alias conflict. The
   generated code is captured into a variable, so later requests need no manual
@@ -256,8 +260,11 @@ Twenty-three requests across four folders:
   returned 500.
 - **Redirect** — the public endpoint, asserting 302 specifically and that the
   response is not cacheable.
+- **QR & Logo** — the QR endpoint before and after an upload, asserting that the
+  branded symbol comes back as a different, larger image; plus a rejected file
+  and an unknown code.
 
-Last full run: 46 assertions, 46 passed.
+Last full run: 60 assertions, 60 passed.
 
 ## 📋 Project Status
 
