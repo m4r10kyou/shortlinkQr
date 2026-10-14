@@ -1,8 +1,10 @@
 package com.m4r10kyou.shortlinkQr.web;
 
 import com.m4r10kyou.shortlinkQr.domain.ShortLink;
+import com.m4r10kyou.shortlinkQr.dto.ShortLinkCreationResponse;
 import com.m4r10kyou.shortlinkQr.dto.ShortLinkRequest;
 import com.m4r10kyou.shortlinkQr.dto.ShortLinkResponse;
+import com.m4r10kyou.shortlinkQr.service.CreatedShortLink;
 import com.m4r10kyou.shortlinkQr.service.LogoImageProcessor;
 import com.m4r10kyou.shortlinkQr.service.QrCodeGenerator;
 import com.m4r10kyou.shortlinkQr.service.ShortLinkService;
@@ -61,11 +63,11 @@ public class ShortLinkController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ShortLinkResponse createShortLink(@Valid @RequestBody ShortLinkRequest request){
+    public ShortLinkCreationResponse createShortLink(@Valid @RequestBody ShortLinkRequest request){
 
-        ShortLink shortLink = shortLinkService.createLink(request.targetUrl(), request.customAlias(), request.expiresAt());
+        CreatedShortLink createdShortLink = shortLinkService.createLink(request.targetUrl(), request.customAlias(), request.expiresAt());
 
-        return ShortLinkResponse.from(shortLink, baseUrl )  ;
+        return ShortLinkCreationResponse.from(createdShortLink.shortLink(), baseUrl, createdShortLink.rawToken() )  ;
     }
 
     @GetMapping(value = "/{code}/qr",

@@ -34,7 +34,7 @@ public class ShortLinkService {
     }
 
     @Transactional
-    public ShortLink createLink(String targetUrl, String customAlias, Instant expiresAt) {
+    public CreatedShortLink createLink(String targetUrl, String customAlias, Instant expiresAt) {
 
         String finalCode;
 
@@ -55,7 +55,8 @@ public class ShortLinkService {
         ManagementTokenGenerator.Token token = tokenGenerator.generate();
 
         ShortLink shortLink = new ShortLink(finalCode, targetUrl, expiresAt, token.tokenHash());
-        return shortLinkRepository.save(shortLink);
+
+        return new CreatedShortLink( shortLinkRepository.save(shortLink), token.rawToken());
     }
 
     @Transactional

@@ -3,6 +3,7 @@ package com.m4r10kyou.shortlinkQr.web;
 import com.m4r10kyou.shortlinkQr.domain.ShortLink;
 import com.m4r10kyou.shortlinkQr.exception.InvalidLogoException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkNotFoundException;
+import com.m4r10kyou.shortlinkQr.service.CreatedShortLink;
 import com.m4r10kyou.shortlinkQr.service.LogoImageProcessor;
 import com.m4r10kyou.shortlinkQr.service.QrCodeGenerator;
 import com.m4r10kyou.shortlinkQr.service.ShortLinkService;
@@ -65,8 +66,9 @@ class ShortLinkControllerTest {
                 """;
 
         ShortLink unShortLink = new ShortLink("mi-repo", "https://example.com",null,hashToken);
+        CreatedShortLink createdShortLink = new CreatedShortLink(unShortLink,"raw-token");
 
-        when(shortLinkService.createLink(any(), any(), any())).thenReturn(unShortLink);
+        when(shortLinkService.createLink(any(), any(), any())).thenReturn(createdShortLink);
 
         mockMvc.perform(post("/api/links")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -132,7 +134,9 @@ class ShortLinkControllerTest {
                     .multipart("/api/links/{code}/logo",code)
                     .file(mockFile))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.hasLogo").value(true));
+                    .andExpect(jsonPath("$.hasLogo").value(true))
+                    .andExpect(jsonPath("$.managementToken").doesNotExist());
+
 
         verify(shortLinkService).attachLogo(code, sanitizedBytes);
     }
@@ -224,7 +228,6 @@ class ShortLinkControllerTest {
         verify(qrCodeGenerator, never()).generate(anyString());
         verify(qrCodeGenerator).generateWithLogo(expectedUrl, logoBytes);
         verify(shortLinkService, never()).resolveCode(any());
-
     }
 
     @Test
@@ -250,4 +253,43 @@ class ShortLinkControllerTest {
         verify(qrCodeGenerator, never()).generateWithLogo(anyString(), any(byte[].class));
         verify(shortLinkService, never()).resolveCode(any());
     }
+
+    @Test
+    void createLink_withValidRequest_returns201AndHasManagementToken() throws Exception{
+
+        String json = """
+                {
+                    "targetUrl": " https://example.com ",
+                    "customAlias": "tokenmng-repo"
+                }
+                """;
+
+        ShortLink shortLinkWithToken = new ShortLink("tokenmng-repo", "https://example.com",null,hashToken);
+        CreatedShortLink createdShortLink = new CreatedShortLink(shortLinkWithToken, "raw-token" );
+
+        when(shortLinkService.createLink(any(), any(), any())).thenReturn(createdShortLink);
+
+        mockMvc.perform(post("/api/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.managementToken").value("raw-token"));
+    }
+
+    @Test
+    void getShortLink_withValidRequest_returns200WithoutTheManagementToken() throws Exception{
+
+        String code ="my-sl-no-token";
+        ShortLink getSLnoMngToken = new ShortLink(code, "https://example.com",null,hashToken);
+
+        when(shortLinkService.getByCode(code)).thenReturn(getSLnoMngToken);
+
+        mockMvc.perform(get("/api/links/{code}", code))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.managementToken").doesNotExist())
+                .andExpect(jsonPath("$.shortUrl").value("http://short.test/my-sl-no-token"))
+                .andExpect(jsonPath("$.targetUrl").value("https://example.com"));
+
+    }
+
 }

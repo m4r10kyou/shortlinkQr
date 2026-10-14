@@ -54,7 +54,7 @@ class ShortLinkServiceTest {
         stubTokenGenerator();
         when(shortLinkRepository.save(any(ShortLink.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        ShortLink result = shortLinkService.createLink(target, alias, null);
+        ShortLink result = shortLinkService.createLink(target, alias, null).shortLink();
 
         assertThat(result.getCode()).isEqualTo(alias);
         assertThat(result.getTargetUrl()).isEqualTo(target);
@@ -88,7 +88,7 @@ class ShortLinkServiceTest {
         stubTokenGenerator();
         when(shortLinkRepository.save(any(ShortLink.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        ShortLink result = shortLinkService.createLink(target, null, null);
+        ShortLink result = shortLinkService.createLink(target, null, null).shortLink();
 
         assertThat(result.getCode()).isEqualTo(generatedCode);
 
