@@ -17,11 +17,13 @@ public class ShortLinkService {
 
     private final ShortLinkRepository shortLinkRepository;
     private final CodeGenerator codeGenerator;
+    private final ManagementTokenGenerator tokenGenerator;
 
-    public ShortLinkService(ShortLinkRepository shortLinkRepository, CodeGenerator codeGenerator) {
+    public ShortLinkService(ShortLinkRepository shortLinkRepository, CodeGenerator codeGenerator, ManagementTokenGenerator tokenGenerator) {
 
         this.shortLinkRepository = shortLinkRepository;
         this.codeGenerator = codeGenerator;
+        this.tokenGenerator = tokenGenerator;
     }
 
     @Transactional(readOnly = true)
@@ -50,7 +52,9 @@ public class ShortLinkService {
             finalCode = codeGenerator.generate(shortLinkRepository::existsByCode);
         }
 
-        ShortLink shortLink = new ShortLink(finalCode, targetUrl, expiresAt);
+        ManagementTokenGenerator.Token token = tokenGenerator.generate();
+
+        ShortLink shortLink = new ShortLink(finalCode, targetUrl, expiresAt, token.tokenHash());
         return shortLinkRepository.save(shortLink);
     }
 

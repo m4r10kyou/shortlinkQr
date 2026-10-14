@@ -8,6 +8,8 @@ import com.m4r10kyou.shortlinkQr.repository.RedirectTarget;
 import com.m4r10kyou.shortlinkQr.repository.ShortLinkRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -26,11 +28,18 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ShortLinkServiceTest {
 
+    private final String hashToken = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
     @Mock
     private ShortLinkRepository shortLinkRepository;
 
     @Mock
     private CodeGenerator codeGenerator;
+
+    @Mock
+    private ManagementTokenGenerator managementTokenGenerator;
+
+    @Captor
+    private ArgumentCaptor<ShortLink> shortLinkCaptor;
 
     @InjectMocks
     private ShortLinkService shortLinkService;
@@ -42,7 +51,7 @@ class ShortLinkServiceTest {
         String alias = "my-alias";
 
         when(shortLinkRepository.existsByCode(alias)).thenReturn(false);
-
+        stubTokenGenerator();
         when(shortLinkRepository.save(any(ShortLink.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         ShortLink result = shortLinkService.createLink(target, alias, null);
@@ -76,6 +85,7 @@ class ShortLinkServiceTest {
         String generatedCode = "gen123";
 
         when(codeGenerator.generate(any())).thenReturn(generatedCode);
+        stubTokenGenerator();
         when(shortLinkRepository.save(any(ShortLink.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         ShortLink result = shortLinkService.createLink(target, null, null);
@@ -86,14 +96,13 @@ class ShortLinkServiceTest {
         verify(shortLinkRepository).save(any(ShortLink.class));
     }
 
-
     @Test
     void resolveCode_withValidCode_returnsTargetUrlAndCountsVisit() {
 
         String target = "https://example.com";
         String code = "valid";
 
-        RedirectTarget redirectTarget = redirectTargetExpiringAt(target,null);
+        RedirectTarget redirectTarget = redirectTargetExpiringAt(target, null);
 
         when(shortLinkRepository.findTargetByCode(code)).thenReturn(Optional.of(redirectTarget));
 
@@ -124,7 +133,7 @@ class ShortLinkServiceTest {
         String target = "https://example.com";
         String code = "expired";
         Instant pastExpiration = Instant.now().minus(1, ChronoUnit.HOURS);
-        RedirectTarget redirectTarget = redirectTargetExpiringAt(target ,pastExpiration);
+        RedirectTarget redirectTarget = redirectTargetExpiringAt(target, pastExpiration);
 
         when(shortLinkRepository.findTargetByCode(code)).thenReturn(Optional.of(redirectTarget));
 
@@ -154,7 +163,7 @@ class ShortLinkServiceTest {
         String code = "newTargetUrl";
         String oldTarget = "https://example.com";
         String newTarget = "https://new.example.com";
-        ShortLink link = new ShortLink(code, oldTarget, null);
+        ShortLink link = new ShortLink(code, oldTarget, null, hashToken);
 
         when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
 
@@ -164,10 +173,10 @@ class ShortLinkServiceTest {
     }
 
     @Test
-    void attachLogo_withNotFoundCode_throwsShortLinkNotFoundException(){
+    void attachLogo_withNotFoundCode_throwsShortLinkNotFoundException() {
 
         String code = "not-exist-code-attach-logo";
-        byte[] pngSignature = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47 , 0x0D , 0x0A , 0x1A , 0x0A  };
+        byte[] pngSignature = new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
 
         when(shortLinkRepository.findByCode(code)).thenReturn(Optional.empty());
 
@@ -177,13 +186,13 @@ class ShortLinkServiceTest {
     }
 
     @Test
-    void attachLogo_withValidCode_storesTheLogo(){
+    void attachLogo_withValidCode_storesTheLogo() {
 
         String code = "my-repo";
         String urlTarget = "https://new.example.com";
-        ShortLink link = new ShortLink(code, urlTarget, null);
+        ShortLink link = new ShortLink(code, urlTarget, null, hashToken);
 
-        byte[] pngSignature = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47 , 0x0D , 0x0A , 0x1A , 0x0A  };
+        byte[] pngSignature = new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
 
 
         when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
@@ -194,8 +203,47 @@ class ShortLinkServiceTest {
         assertThat(result.getLogoData()).isEqualTo(pngSignature);
     }
 
+    @Test
+    void createLink_withACustomAlias_storesTheGeneratedTokenHash() {
 
-    private RedirectTarget redirectTargetExpiringAt(String url, Instant when){
+        String target = "https://example.com";
+        String alias = "custom-alias-token";
+
+        when(shortLinkRepository.existsByCode(alias)).thenReturn(false);
+        stubTokenGenerator();
+
+        shortLinkService.createLink(target, alias, null);
+
+        verify(shortLinkRepository).save(shortLinkCaptor.capture());
+
+        ShortLink capturedLink = shortLinkCaptor.getValue();
+        assertThat(capturedLink.getTargetUrl()).isEqualTo(target);
+        assertThat(capturedLink.getCode()).isEqualTo(alias);
+        assertThat(capturedLink.matchesManagementToken(hashToken)).isTrue();
+    }
+
+    @Test
+    void createLink_withoutAnAlias_storesTheGeneratedTokenHash() {
+
+        String target = "https://example.com";
+        String generatedCode = "randomAliasGenerated";
+
+
+        when(codeGenerator.generate(any())).thenReturn(generatedCode);
+        stubTokenGenerator();
+
+        shortLinkService.createLink(target, null, null);
+
+        verify(shortLinkRepository).save(shortLinkCaptor.capture());
+
+        ShortLink capturedLink = shortLinkCaptor.getValue();
+        assertThat(capturedLink.getTargetUrl()).isEqualTo(target);
+        assertThat(capturedLink.getCode()).isEqualTo(generatedCode);
+        assertThat(capturedLink.matchesManagementToken(hashToken)).isTrue();
+    }
+
+
+    private RedirectTarget redirectTargetExpiringAt(String url, Instant when) {
 
         return new RedirectTarget() {
 
@@ -209,5 +257,10 @@ class ShortLinkServiceTest {
                 return when;
             }
         };
+    }
+
+    private void stubTokenGenerator() {
+        ManagementTokenGenerator.Token mockToken = new ManagementTokenGenerator.Token("raw-token", hashToken);
+        when(managementTokenGenerator.generate()).thenReturn(mockToken);
     }
 }

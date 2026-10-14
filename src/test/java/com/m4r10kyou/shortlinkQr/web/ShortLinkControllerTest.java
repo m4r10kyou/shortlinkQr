@@ -36,6 +36,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         properties = "shortlink.base-url=http://short.test")
 class ShortLinkControllerTest {
 
+    private final String hashToken = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -51,6 +53,7 @@ class ShortLinkControllerTest {
     @MockitoBean
     private LogoUploadValidator logoUploadValidator;
 
+
     @Test
     void createLink_withValidRequest_returns201AndTrimsUrl() throws Exception {
 
@@ -61,7 +64,7 @@ class ShortLinkControllerTest {
                 }
                 """;
 
-        ShortLink unShortLink = new ShortLink("mi-repo", "https://example.com",null);
+        ShortLink unShortLink = new ShortLink("mi-repo", "https://example.com",null,hashToken);
 
         when(shortLinkService.createLink(any(), any(), any())).thenReturn(unShortLink);
 
@@ -107,7 +110,7 @@ class ShortLinkControllerTest {
     @Test
     void uploadLogo_withValidRequest_returns200WithTheUpdatedLink() throws Exception {
 
-        ShortLink shortLink = new ShortLink("mi-repo", "https://example.com",null);
+        ShortLink shortLink = new ShortLink("mi-repo", "https://example.com",null,hashToken);
         String code = "mi-repo";
         byte[] originalBytes = "contenido-original".getBytes();
         byte[] sanitizedBytes = "contenido-saneado".getBytes();
@@ -199,7 +202,7 @@ class ShortLinkControllerTest {
     @Test
     void getQrCode_withALinkThatHasALogo_returns200AndUsesTheBrandedGenerator() throws Exception {
 
-        ShortLink shortLink = new ShortLink("has-logo", "https://example.com",null);
+        ShortLink shortLink = new ShortLink("has-logo", "https://example.com",null,hashToken);
 
         byte[] logoBytes = new byte[] { 1, 2, 3 };
         shortLink.attachLogo(logoBytes);
@@ -227,7 +230,7 @@ class ShortLinkControllerTest {
     @Test
     void getQrCode_withALinkWithoutALogo_returns200AndNeverUsesTheBrandedGenerator() throws Exception {
 
-        ShortLink shortLink = new ShortLink("no-logo", "https://example.com",null);
+        ShortLink shortLink = new ShortLink("no-logo", "https://example.com",null,hashToken);
 
         byte[] normalQr = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47 };
 
