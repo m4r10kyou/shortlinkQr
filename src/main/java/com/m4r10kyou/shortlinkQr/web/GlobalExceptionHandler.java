@@ -2,6 +2,7 @@ package com.m4r10kyou.shortlinkQr.web;
 
 import com.m4r10kyou.shortlinkQr.exception.AliasAlreadyExistsException;
 import com.m4r10kyou.shortlinkQr.exception.InvalidLogoException;
+import com.m4r10kyou.shortlinkQr.exception.InvalidTokenException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkExpiredException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkNotFoundException;
 import org.slf4j.Logger;
@@ -126,6 +127,21 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         log.debug("Request validation failed for fields {}", errors.keySet());
 
         return handleExceptionInternal(ex, problem, headers, status, request);
+    }
+
+    @ExceptionHandler(InvalidTokenException.class)
+    public ProblemDetail handleToken(InvalidTokenException ex){
+
+        log.warn("Rejected management token for code: {}", ex.getCode());
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.FORBIDDEN,
+                ex.getMessage()
+        );
+        problem.setTitle("Not Authorized");
+        problem.setType(URI.create("urn:problem-type:invalid-management-token"));
+
+        return problem;
     }
 
     @ExceptionHandler(Exception.class)

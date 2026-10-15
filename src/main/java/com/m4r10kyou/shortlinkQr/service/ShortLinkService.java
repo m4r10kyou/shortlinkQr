@@ -18,19 +18,20 @@ public class ShortLinkService {
     private final ShortLinkRepository shortLinkRepository;
     private final CodeGenerator codeGenerator;
     private final ManagementTokenGenerator tokenGenerator;
+    private final AuthorizationTokenProcessor authorizationTokenProcessor;
 
-    public ShortLinkService(ShortLinkRepository shortLinkRepository, CodeGenerator codeGenerator, ManagementTokenGenerator tokenGenerator) {
+    public ShortLinkService(ShortLinkRepository shortLinkRepository, CodeGenerator codeGenerator, ManagementTokenGenerator tokenGenerator, AuthorizationTokenProcessor authorizationTokenProcessor) {
 
         this.shortLinkRepository = shortLinkRepository;
         this.codeGenerator = codeGenerator;
         this.tokenGenerator = tokenGenerator;
+        this.authorizationTokenProcessor = authorizationTokenProcessor;
     }
 
     @Transactional(readOnly = true)
     public ShortLink getByCode(String code) {
 
-        return shortLinkRepository.findByCode(code)
-                .orElseThrow(() -> new ShortLinkNotFoundException(code));
+        return getShortLink(code);
     }
 
     @Transactional
@@ -78,18 +79,39 @@ public class ShortLinkService {
     @Transactional
     public ShortLink updateDestination(String code, String newTargetUrl) {
 
-        ShortLink  shortLink = this.getByCode(code);
+        ShortLink  shortLink = getShortLink(code);
 
         shortLink.changeTargetUrl(newTargetUrl);
         return shortLink;
     }
 
     @Transactional
-    public ShortLink attachLogo(String code, byte[] sanitizedBytes){
+    public ShortLink attachLogo(String code, byte[] sanitizedBytes, String rawToken){
 
-        ShortLink  shortLink = this.getByCode(code);
+        ShortLink  shortLink =  getShortLinkWithAuthorization( code,  rawToken);
 
         shortLink.attachLogo(sanitizedBytes);
+
+        return shortLink;
+    }
+
+    @Transactional(readOnly = true)
+    public ShortLink getByCodeWithAuthorization(String code, String rawToken){
+
+        return getShortLinkWithAuthorization(code,rawToken);
+    }
+
+    private ShortLink getShortLink(String code){
+
+        return shortLinkRepository.findByCode(code)
+                .orElseThrow(() -> new ShortLinkNotFoundException(code));
+    }
+
+    private ShortLink getShortLinkWithAuthorization(String code, String rawToken){
+
+        ShortLink shortLink = getShortLink(code);
+
+        authorizationTokenProcessor.authorize(shortLink,rawToken);
 
         return shortLink;
     }

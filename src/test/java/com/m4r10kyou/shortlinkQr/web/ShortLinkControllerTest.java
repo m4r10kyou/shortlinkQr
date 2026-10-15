@@ -2,6 +2,7 @@ package com.m4r10kyou.shortlinkQr.web;
 
 import com.m4r10kyou.shortlinkQr.domain.ShortLink;
 import com.m4r10kyou.shortlinkQr.exception.InvalidLogoException;
+import com.m4r10kyou.shortlinkQr.exception.InvalidTokenException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkNotFoundException;
 import com.m4r10kyou.shortlinkQr.service.CreatedShortLink;
 import com.m4r10kyou.shortlinkQr.service.LogoImageProcessor;
@@ -23,6 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -101,9 +103,10 @@ class ShortLinkControllerTest {
     @Test
     void getShortLink_withUnknownCode_returns404WithFailingCode() throws Exception {
 
-        when(shortLinkService.getByCode("notFound")).thenThrow(new ShortLinkNotFoundException("notFound"));
+        when(shortLinkService.getByCodeWithAuthorization("notFound","rawToken")).thenThrow(new ShortLinkNotFoundException("notFound"));
 
-        mockMvc.perform(get("/api/links/notFound"))
+        mockMvc.perform(get("/api/links/notFound")
+                        .header("X-Management-Token","rawToken"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.type").value("urn:problem-type:not-found"))
                 .andExpect(jsonPath("$.code").value("notFound"));
@@ -114,6 +117,7 @@ class ShortLinkControllerTest {
 
         ShortLink shortLink = new ShortLink("mi-repo", "https://example.com",null,hashToken);
         String code = "mi-repo";
+        String token= "validToken";
         byte[] originalBytes = "contenido-original".getBytes();
         byte[] sanitizedBytes = "contenido-saneado".getBytes();
 
@@ -127,18 +131,19 @@ class ShortLinkControllerTest {
         shortLink.attachLogo(sanitizedBytes);
 
         when(logoImageProcessor.sanitize(any(byte[].class))).thenReturn(sanitizedBytes);
-        when(shortLinkService.attachLogo(eq(code), any(byte[].class)))
+        when(shortLinkService.attachLogo(eq(code), any(byte[].class),anyString()))
                 .thenReturn(shortLink);
 
         mockMvc.perform( MockMvcRequestBuilders
-                    .multipart("/api/links/{code}/logo",code)
-                    .file(mockFile))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.hasLogo").value(true))
-                    .andExpect(jsonPath("$.managementToken").doesNotExist());
+                        .multipart("/api/links/{code}/logo",code)
+                        .header("X-Management-Token", token)
+                        .file(mockFile))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hasLogo").value(true))
+                .andExpect(jsonPath("$.managementToken").doesNotExist());
 
 
-        verify(shortLinkService).attachLogo(code, sanitizedBytes);
+        verify(shortLinkService).attachLogo(code, sanitizedBytes,token);
     }
 
     @Test
@@ -158,8 +163,8 @@ class ShortLinkControllerTest {
                 .thenThrow(new InvalidLogoException("Unsupported image format"));
 
         mockMvc.perform(MockMvcRequestBuilders
-                .multipart("/api/links/{code}/logo", code)
-                .file(mockFile))
+                        .multipart("/api/links/{code}/logo", code)
+                        .file(mockFile))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.type").value("urn:problem-type:invalid-logo"));
 
@@ -181,12 +186,13 @@ class ShortLinkControllerTest {
 
         when(logoImageProcessor.sanitize(any(byte[].class))).thenReturn(sanitizedBytes);
 
-        when(shortLinkService.attachLogo(eq(code), any(byte[].class)))
+        when(shortLinkService.attachLogo(eq(code), any(byte[].class),anyString()))
                 .thenThrow(new ShortLinkNotFoundException("notFound"));
 
         mockMvc.perform(MockMvcRequestBuilders
-                .multipart("/api/links/{code}/logo", code)
-                .file(mockFile))
+                        .multipart("/api/links/{code}/logo", code)
+                        .header("X-Management-Token","rawToken")
+                        .file(mockFile))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.type").value("urn:problem-type:not-found"))
                 .andExpect(jsonPath("$.code").value("notFound"));
@@ -199,7 +205,7 @@ class ShortLinkControllerTest {
         String code = "mi-repo";
 
         mockMvc.perform(MockMvcRequestBuilders
-                .multipart("/api/links/{code}/logo", code))
+                        .multipart("/api/links/{code}/logo", code))
                 .andExpect(status().isBadRequest());
     }
 
@@ -280,16 +286,60 @@ class ShortLinkControllerTest {
     void getShortLink_withValidRequest_returns200WithoutTheManagementToken() throws Exception{
 
         String code ="my-sl-no-token";
+        String token = "raw-token";
         ShortLink getSLnoMngToken = new ShortLink(code, "https://example.com",null,hashToken);
 
-        when(shortLinkService.getByCode(code)).thenReturn(getSLnoMngToken);
+        when(shortLinkService.getByCodeWithAuthorization(code, token)).thenReturn(getSLnoMngToken);
 
-        mockMvc.perform(get("/api/links/{code}", code))
+        mockMvc.perform(get("/api/links/{code}", code)
+                        .header("X-Management-Token",token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.managementToken").doesNotExist())
                 .andExpect(jsonPath("$.shortUrl").value("http://short.test/my-sl-no-token"))
                 .andExpect(jsonPath("$.targetUrl").value("https://example.com"));
 
+    }
+
+    @Test
+    void uploadLogo_withoutManagementToken_returns403() throws Exception {
+
+        String code = "mi-repo-forbidden";
+        byte[] originalBytes = "contenido-original".getBytes();
+        byte[] sanitizedBytes = "contenido-saneado".getBytes();
+
+        MockMultipartFile mockFile = new MockMultipartFile(
+                "file",
+                "avatar.jpg",
+                MediaType.IMAGE_JPEG_VALUE,
+                originalBytes
+        );
+
+        when(logoImageProcessor.sanitize(any(byte[].class))).thenReturn(sanitizedBytes);
+
+        when(shortLinkService.attachLogo(eq(code), any(byte[].class),nullable(String.class)))
+                .thenThrow(new InvalidTokenException("Management token is missing",code));
+
+        mockMvc.perform(MockMvcRequestBuilders
+                        .multipart("/api/links/{code}/logo", code)
+                .file(mockFile))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.type")
+                        .value("urn:problem-type:invalid-management-token"));
+    }
+
+    @Test
+    void getShortLink_withAnInvalidManagementToken_returns403() throws Exception {
+        String code ="my-sl-no-token";
+        String invalidToken = "that-is-invalid";
+
+        when(shortLinkService.getByCodeWithAuthorization(code, invalidToken))
+                .thenThrow(new InvalidTokenException("Management token is missing",code));
+
+        mockMvc.perform(get("/api/links/{code}", code)
+                        .header("X-Management-Token",invalidToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.type")
+                        .value("urn:problem-type:invalid-management-token"));
     }
 
 }

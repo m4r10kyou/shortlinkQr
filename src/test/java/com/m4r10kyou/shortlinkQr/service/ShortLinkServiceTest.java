@@ -2,6 +2,7 @@ package com.m4r10kyou.shortlinkQr.service;
 
 import com.m4r10kyou.shortlinkQr.domain.ShortLink;
 import com.m4r10kyou.shortlinkQr.exception.AliasAlreadyExistsException;
+import com.m4r10kyou.shortlinkQr.exception.InvalidTokenException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkExpiredException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkNotFoundException;
 import com.m4r10kyou.shortlinkQr.repository.RedirectTarget;
@@ -21,6 +22,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -37,6 +39,9 @@ class ShortLinkServiceTest {
 
     @Mock
     private ManagementTokenGenerator managementTokenGenerator;
+
+    @Mock
+    private AuthorizationTokenProcessor authorizationTokenProcessor;
 
     @Captor
     private ArgumentCaptor<ShortLink> shortLinkCaptor;
@@ -176,11 +181,13 @@ class ShortLinkServiceTest {
     void attachLogo_withNotFoundCode_throwsShortLinkNotFoundException() {
 
         String code = "not-exist-code-attach-logo";
+        String token= "validToken";
+
         byte[] pngSignature = new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
 
         when(shortLinkRepository.findByCode(code)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> shortLinkService.attachLogo(code, pngSignature))
+        assertThatThrownBy(() -> shortLinkService.attachLogo(code, pngSignature,token))
                 .isInstanceOf(ShortLinkNotFoundException.class)
                 .hasMessageContaining(code);
     }
@@ -190,6 +197,8 @@ class ShortLinkServiceTest {
 
         String code = "my-repo";
         String urlTarget = "https://new.example.com";
+        String token= "validToken";
+
         ShortLink link = new ShortLink(code, urlTarget, null, hashToken);
 
         byte[] pngSignature = new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
@@ -197,10 +206,34 @@ class ShortLinkServiceTest {
 
         when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
 
-        ShortLink result = shortLinkService.attachLogo(code, pngSignature);
+        ShortLink result = shortLinkService.attachLogo(code, pngSignature,token);
 
         assertThat(result.hasLogo()).isTrue();
         assertThat(result.getLogoData()).isEqualTo(pngSignature);
+    }
+
+    @Test
+    void attachLogo_withAnInvalidToken_doesNotAttachTheLogo(){
+
+        String code = "my-repo";
+        String urlTarget = "https://new.example.com";
+        String tokenInvalid= "noValidToken";
+        String errorMsg = "Token provided is invalid";
+
+        ShortLink link = new ShortLink(code, urlTarget, null, hashToken);
+
+        byte[] pngSignature = new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+
+        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
+
+        doThrow(new InvalidTokenException(errorMsg,code))
+                .when(authorizationTokenProcessor).authorize(link, tokenInvalid);
+
+        assertThatThrownBy(() -> shortLinkService.attachLogo(code, pngSignature, tokenInvalid))
+                .isInstanceOf(InvalidTokenException.class)
+                .hasMessageContaining(errorMsg);
+
+        assertThat(link.hasLogo()).isFalse();
     }
 
     @Test
