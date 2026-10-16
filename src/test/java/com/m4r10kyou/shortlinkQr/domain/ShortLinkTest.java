@@ -9,6 +9,8 @@ class ShortLinkTest {
 
     private final ShortLink shortLink = new ShortLink("mi-repo", "https://example.com",null,"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2");
     private final byte[] dummyImage = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47 };
+    private final String hashToken = "1afe794031ddb20ccfd6b5764cfb9de14930c7bb513f82271eab6891ab3ba4bd";
+
 
     @Test
     void attachLogo_withBytes_storesTheLogo() {
@@ -23,15 +25,21 @@ class ShortLinkTest {
     @Test
     void attachLogo_withNull_throwsNullPointerException(){
 
+        String errorMsg ="Logo cannot be null";
+
         assertThatThrownBy(() -> shortLink.attachLogo(null))
-                .isInstanceOf(NullPointerException.class);
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage(errorMsg);
     }
 
     @Test
     void attachLogo_withEmptyArray_throwsIllegalArgumentException(){
 
+        String errorMsg ="Logo array cannot be empty";
+
         assertThatThrownBy(() -> shortLink.attachLogo(new byte[] {}))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage(errorMsg);
     }
 
     @Test
@@ -77,7 +85,6 @@ class ShortLinkTest {
     @Test
     void matchesManagementToken_withTheStoredHash_returnsTrue(){
 
-        String hashToken = "1afe794031ddb20ccfd6b5764cfb9de14930c7bb513f82271eab6891ab3ba4bd";
         ShortLink shortLink = new ShortLink("storedHash", "https://example.com",null,hashToken);
 
         assertThat(shortLink.matchesManagementToken(hashToken)).isTrue();
@@ -86,7 +93,6 @@ class ShortLinkTest {
     @Test
     void matchesManagementToken_withAnotherHash_returnsFalse(){
 
-        String hashToken = "1afe794031ddb20ccfd6b5764cfb9de14930c7bb513f82271eab6891ab3ba4bd";
         String anotherHashToken = "n0v4l1dh4sht0k3nn0v4l1dh4sht0k3nn0v4l1dh4sht0k3nn0v4l1dh4sht0k3n";
         String hashDifferingInTheLastCharacter = "1afe794031ddb20ccfd6b5764cfb9de14930c7bb513f82271eab6891ab3ba4be";
 
@@ -99,7 +105,6 @@ class ShortLinkTest {
     @Test
     void matchesManagementToken_withNull_returnsFalse(){
 
-        String hashToken = "1afe794031ddb20ccfd6b5764cfb9de14930c7bb513f82271eab6891ab3ba4bd";
         ShortLink shortLink = new ShortLink("token-null", "https://example.com",null,hashToken);
 
         assertThat(shortLink.matchesManagementToken(null)).isFalse();
@@ -107,8 +112,6 @@ class ShortLinkTest {
 
     @Test
     void matchesManagementToken_withBlank_returnsFalse(){
-
-        String hashToken = "1afe794031ddb20ccfd6b5764cfb9de14930c7bb513f82271eab6891ab3ba4bd";
 
         ShortLink shortLink = new ShortLink("blank-token", "https://example.com",null,hashToken);
 
@@ -118,10 +121,28 @@ class ShortLinkTest {
     @Test
     void matchesManagementToken_whenNoHashIsStored_returnsFalse(){
 
-        String hashToken = "1afe794031ddb20ccfd6b5764cfb9de14930c7bb513f82271eab6891ab3ba4bd";
-
         ShortLink shortLink = new ShortLink("no-token-stored", "https://example.com",null,null);
 
         assertThat(shortLink.matchesManagementToken(hashToken)).isFalse();
+    }
+
+    @Test
+    void changeExpiry_withNull_throwsNullPointerException(){
+
+        String errorMsg ="Expiration cannot be null";
+
+        assertThatThrownBy(() -> shortLink.changeExpiry(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage(errorMsg);
+    }
+
+    @Test
+    void changeTargetUrl_withNull_throwsNullPointerException(){
+
+        String errorMsg ="Target url cannot be null";
+
+        assertThatThrownBy(() -> shortLink.changeTargetUrl(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage(errorMsg);
     }
 }

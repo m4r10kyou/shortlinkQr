@@ -91,10 +91,19 @@ public class ShortLink {
     }
 
     public void changeExpiry(Instant expiresAt) {
+
+        Objects.requireNonNull(expiresAt, "Expiration cannot be null");
+
         this.expiresAt = expiresAt;
     }
 
+    public void removeExpiry(){
+
+        this.expiresAt = null;
+    }
+
     public void changeTargetUrl(String url) {
+        Objects.requireNonNull(url, "Target url cannot be null");
 
         this.targetUrl = url;
     }

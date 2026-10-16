@@ -8,8 +8,10 @@ import com.m4r10kyou.shortlinkQr.service.CreatedShortLink;
 import com.m4r10kyou.shortlinkQr.service.LogoImageProcessor;
 import com.m4r10kyou.shortlinkQr.service.QrCodeGenerator;
 import com.m4r10kyou.shortlinkQr.service.ShortLinkService;
+import com.m4r10kyou.shortlinkQr.service.ShortLinkUpdate;
 import com.m4r10kyou.shortlinkQr.validation.LogoUploadValidator;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.HttpHeaders;
@@ -19,6 +21,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -29,6 +35,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -297,7 +304,6 @@ class ShortLinkControllerTest {
                 .andExpect(jsonPath("$.managementToken").doesNotExist())
                 .andExpect(jsonPath("$.shortUrl").value("http://short.test/my-sl-no-token"))
                 .andExpect(jsonPath("$.targetUrl").value("https://example.com"));
-
     }
 
     @Test
@@ -321,7 +327,7 @@ class ShortLinkControllerTest {
 
         mockMvc.perform(MockMvcRequestBuilders
                         .multipart("/api/links/{code}/logo", code)
-                .file(mockFile))
+                        .file(mockFile))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.type")
                         .value("urn:problem-type:invalid-management-token"));
@@ -340,6 +346,211 @@ class ShortLinkControllerTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.type")
                         .value("urn:problem-type:invalid-management-token"));
+    }
+
+    @Test
+    void updateLink_withNoFields_returns400AndNeverCallsService() throws Exception {
+
+        String code ="empty-body";
+        String errorMsg = "Can not edit Short Link without parameters";
+        String json = "{}";
+
+        mockMvc.perform(patch("/api/links/{code}", code)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.notEmptyRequest").value(errorMsg));
+
+        verify(shortLinkService, never()).updateLink(any(), any(), any());
+    }
+
+    @Test
+    void updateLink_withBothExpiryFields_returns400AndNeverCallsService() throws Exception {
+
+        String code ="both-expiry";
+        Instant expiresAt = Instant.now().plus(30, ChronoUnit.DAYS);
+        String json = """
+                {
+                    "expiresAt"     : "%s",
+                    "clearExpiry"   : true
+                }
+                """.formatted(expiresAt);
+
+        mockMvc.perform(patch("/api/links/{code}", code)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors").exists());
+
+        verify(shortLinkService, never()).updateLink(any(), any(), any());
+    }
+
+    @Test
+    void updateLink_withAValidRequest_returns200AndTheUpdatedLink() throws Exception {
+
+        String code ="changeUrl";
+        String token = "validToken";
+        String newTargetUrl = "https://new.example.com";
+        String json = """
+                {
+                    "targetUrl": "https://new.example.com"
+                }
+                """;
+
+        ShortLink updatedShortLink = new ShortLink(code, newTargetUrl, null, hashToken);
+
+        when(shortLinkService.updateLink(eq(code), any(ShortLinkUpdate.class), eq(token)))
+                .thenReturn(updatedShortLink);
+
+        mockMvc.perform(patch("/api/links/{code}", code)
+                        .header("X-Management-Token", token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.targetUrl").value(newTargetUrl))
+                .andExpect(jsonPath("$.managementToken").doesNotExist());
+
+        ArgumentCaptor<ShortLinkUpdate> updateCaptor = ArgumentCaptor.forClass(ShortLinkUpdate.class);
+        verify(shortLinkService).updateLink(eq(code), updateCaptor.capture(), eq(token));
+
+        ShortLinkUpdate capturedUpdate = updateCaptor.getValue();
+        assertThat(capturedUpdate.targetUrl()).isEqualTo(newTargetUrl);
+        assertThat(capturedUpdate.expiresAt()).isNull();
+        assertThat(capturedUpdate.clearExpiry()).isFalse();
+    }
+
+    @Test
+    void updateLink_withChangeUrlAndClearExpiry_returns200AndTheUpdatedLink() throws Exception {
+
+        String code ="changeUrl-clearExpity";
+        String token = "validToken";
+        String newTargetUrl = "https://new.example.com";
+        String json = """
+                {
+                    "targetUrl"     : "%s",
+                    "clearExpiry"   : true
+                }
+                """.formatted(newTargetUrl);
+
+        ShortLink updatedShortLink = new ShortLink(code, newTargetUrl, null, hashToken);
+
+        when(shortLinkService.updateLink(eq(code), any(ShortLinkUpdate.class), eq(token)))
+                .thenReturn(updatedShortLink);
+
+        mockMvc.perform(patch("/api/links/{code}", code)
+                        .header("X-Management-Token", token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.targetUrl").value(newTargetUrl))
+                .andExpect(jsonPath("$.managementToken").doesNotExist());
+
+        ArgumentCaptor<ShortLinkUpdate> updateCaptor = ArgumentCaptor.forClass(ShortLinkUpdate.class);
+        verify(shortLinkService).updateLink(eq(code), updateCaptor.capture(), eq(token));
+
+        ShortLinkUpdate capturedUpdate = updateCaptor.getValue();
+        assertThat(capturedUpdate.targetUrl()).isEqualTo(newTargetUrl);
+        assertThat(capturedUpdate.expiresAt()).isNull();
+        assertThat(capturedUpdate.clearExpiry()).isTrue();
+    }
+
+    @Test
+    void updateLink_withoutManagementToken_returns403() throws Exception {
+
+        String code = "update-forbidden";
+        String json = """
+                {
+                    "targetUrl": "https://no-update.example.com"
+                }
+                """;
+
+        when(shortLinkService.updateLink(eq(code), any(ShortLinkUpdate.class), nullable(String.class)))
+                .thenThrow(new InvalidTokenException("Management token is missing",code));
+
+
+        mockMvc.perform(patch("/api/links/{code}", code)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.type")
+                        .value("urn:problem-type:invalid-management-token"));
+    }
+
+    @Test
+    void updateLink_withABlankTargetUrl_returns400() throws Exception {
+
+        String code = "blank-target";
+        String json = """
+                        {
+                            "targetUrl": ""
+                        }
+                        """;
+
+        mockMvc.perform(patch("/api/links/{code}", code)
+                        .header("X-Management-Token", "token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.targetUrl").exists());
+
+        verify(shortLinkService, never()).updateLink(any(), any(), any());
+    }
+
+    @Test
+    void updateLink_withNonHttpScheme_returns400() throws Exception {
+
+        String code = "no-http";
+        String noHttp ="mailto:someone@email.com";
+        String json = """
+                        {
+                            "targetUrl": "%s"
+                        }
+                        """.formatted(noHttp);
+
+        mockMvc.perform(patch("/api/links/{code}", code)
+                        .header("X-Management-Token", "token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.targetUrl").exists());
+
+        verify(shortLinkService, never()).updateLink(any(), any(), any());
+    }
+
+    @Test
+    void updateLink_withAPastExpiry_returns400() throws Exception {
+
+        String code = "past-expiry";
+        String json = """
+                        {
+                           "expiresAt" : "2019-01-21T23:30:45Z"
+                        }
+                        """;
+
+        mockMvc.perform(patch("/api/links/{code}", code)
+                        .header("X-Management-Token", "token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.expiresAt").exists());
+
+        verify(shortLinkService, never()).updateLink(any(), any(), any());
+    }
+
+    @Test
+    void updateLink_withAnUnreadableBody_returns400() throws Exception {
+
+        String code = "no-body";
+
+
+        mockMvc.perform(patch("/api/links/{code}", code)
+                        .header("X-Management-Token", "token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors").doesNotExist());
+
+        verify(shortLinkService, never()).updateLink(any(), any(), any());
     }
 
 }

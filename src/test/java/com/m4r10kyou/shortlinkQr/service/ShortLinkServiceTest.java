@@ -31,6 +31,7 @@ import static org.mockito.Mockito.when;
 class ShortLinkServiceTest {
 
     private final String hashToken = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+
     @Mock
     private ShortLinkRepository shortLinkRepository;
 
@@ -150,44 +151,32 @@ class ShortLinkServiceTest {
     }
 
     @Test
-    void updateDestination_withNotFoundCode_throwsShortLinkNotFoundException() {
+    void updateLink_withNotFoundCode_throwsShortLinkNotFoundException() {
 
         String code = "not-exist-code-target-url";
         String target = "https://false.example.com";
+        String rawToken = "someToken";
 
         when(shortLinkRepository.findByCode(code)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> shortLinkService.updateDestination(code, target))
+        ShortLinkUpdate slUpdate = new ShortLinkUpdate(target, Instant.now().plus(5, ChronoUnit.DAYS), false);
+
+        assertThatThrownBy(() -> shortLinkService.updateLink(code, slUpdate, rawToken))
                 .isInstanceOf(ShortLinkNotFoundException.class)
                 .hasMessageContaining(code);
-    }
-
-    @Test
-    void updateDestination_withValidCode_changesTargetUrl() {
-
-        String code = "newTargetUrl";
-        String oldTarget = "https://example.com";
-        String newTarget = "https://new.example.com";
-        ShortLink link = new ShortLink(code, oldTarget, null, hashToken);
-
-        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
-
-        ShortLink result = shortLinkService.updateDestination(code, newTarget);
-
-        assertThat(result.getTargetUrl()).isEqualTo(newTarget);
     }
 
     @Test
     void attachLogo_withNotFoundCode_throwsShortLinkNotFoundException() {
 
         String code = "not-exist-code-attach-logo";
-        String token= "validToken";
+        String token = "validToken";
 
         byte[] pngSignature = new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
 
         when(shortLinkRepository.findByCode(code)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> shortLinkService.attachLogo(code, pngSignature,token))
+        assertThatThrownBy(() -> shortLinkService.attachLogo(code, pngSignature, token))
                 .isInstanceOf(ShortLinkNotFoundException.class)
                 .hasMessageContaining(code);
     }
@@ -197,27 +186,26 @@ class ShortLinkServiceTest {
 
         String code = "my-repo";
         String urlTarget = "https://new.example.com";
-        String token= "validToken";
+        String token = "validToken";
 
         ShortLink link = new ShortLink(code, urlTarget, null, hashToken);
 
         byte[] pngSignature = new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
 
-
         when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
 
-        ShortLink result = shortLinkService.attachLogo(code, pngSignature,token);
+        ShortLink result = shortLinkService.attachLogo(code, pngSignature, token);
 
         assertThat(result.hasLogo()).isTrue();
         assertThat(result.getLogoData()).isEqualTo(pngSignature);
     }
 
     @Test
-    void attachLogo_withAnInvalidToken_doesNotAttachTheLogo(){
+    void attachLogo_withAnInvalidToken_doesNotAttachTheLogo() {
 
         String code = "my-repo";
         String urlTarget = "https://new.example.com";
-        String tokenInvalid= "noValidToken";
+        String tokenInvalid = "noValidToken";
         String errorMsg = "Token provided is invalid";
 
         ShortLink link = new ShortLink(code, urlTarget, null, hashToken);
@@ -226,7 +214,7 @@ class ShortLinkServiceTest {
 
         when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
 
-        doThrow(new InvalidTokenException(errorMsg,code))
+        doThrow(new InvalidTokenException(errorMsg, code))
                 .when(authorizationTokenProcessor).authorize(link, tokenInvalid);
 
         assertThatThrownBy(() -> shortLinkService.attachLogo(code, pngSignature, tokenInvalid))
@@ -261,7 +249,6 @@ class ShortLinkServiceTest {
         String target = "https://example.com";
         String generatedCode = "randomAliasGenerated";
 
-
         when(codeGenerator.generate(any())).thenReturn(generatedCode);
         stubTokenGenerator();
 
@@ -273,6 +260,136 @@ class ShortLinkServiceTest {
         assertThat(capturedLink.getTargetUrl()).isEqualTo(target);
         assertThat(capturedLink.getCode()).isEqualTo(generatedCode);
         assertThat(capturedLink.matchesManagementToken(hashToken)).isTrue();
+    }
+
+    @Test
+    void updateLink_withANewTargetUrl_changesOnlyTheTargetUrl() {
+
+        String code = "newTargetUrl";
+        String oldTarget = "https://example.com";
+        String newTarget = "https://new.example.com";
+        Instant originalExpiry = Instant.now().plus(10, ChronoUnit.DAYS);
+        String token = "validToken";
+
+        ShortLink link = new ShortLink(code, oldTarget, originalExpiry, hashToken);
+
+        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
+
+        ShortLinkUpdate slUpdate = new ShortLinkUpdate(newTarget, null, false);
+
+        ShortLink result = shortLinkService.updateLink(code, slUpdate, token);
+
+        assertThat(result.getTargetUrl()).isEqualTo(newTarget);
+        assertThat(result.getExpiresAt()).isEqualTo(originalExpiry);
+    }
+
+    @Test
+    void updateLink_withANewExpiry_changesOnlyTheExpiry() {
+
+        String code = "newExpiry";
+        Instant newInstant = Instant.now().plus(25, ChronoUnit.DAYS);
+        String originalTargetUrl = "https://example.com";
+        String token = "validToken";
+
+        ShortLink link = new ShortLink(code, originalTargetUrl, null, hashToken);
+
+        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
+
+        ShortLinkUpdate slUpdate = new ShortLinkUpdate(null, newInstant, false);
+
+        ShortLink result = shortLinkService.updateLink(code, slUpdate, token);
+
+        assertThat(result.getExpiresAt()).isEqualTo(newInstant);
+        assertThat(result.getTargetUrl()).isEqualTo(originalTargetUrl);
+    }
+
+    @Test
+    void updateLink_withClearExpiry_removesTheExpiry() {
+
+        String code = "clearExpiry";
+        Instant expiry = Instant.now().plus(1, ChronoUnit.DAYS);
+        String originalTargetUrl = "https://example.com";
+        boolean clearExpiry = true;
+        String token = "validToken";
+
+        ShortLink link = new ShortLink(code, originalTargetUrl, expiry, hashToken);
+
+        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
+
+        ShortLinkUpdate slUpdate = new ShortLinkUpdate(null, null, clearExpiry);
+
+        ShortLink result = shortLinkService.updateLink(code, slUpdate, token);
+
+        assertThat(result.getExpiresAt()).isNull();
+        assertThat(result.getTargetUrl()).isEqualTo(originalTargetUrl);
+    }
+
+    @Test
+    void updateLink_withAnInvalidToken_changesNothing() {
+
+        String code = "updateInvalidToken";
+        Instant originalExpiry = Instant.now().plus(1, ChronoUnit.DAYS);
+        Instant newExpiry = Instant.now().plus(100, ChronoUnit.DAYS);
+        String originalTargetUrl = "https://example.com";
+        String newTargetUrl = "https://new.example.com";
+        String tokenInvalid = "tokenInvalid";
+        String errorMsg = "Token provided is invalid";
+
+        ShortLink link = new ShortLink(code, originalTargetUrl, originalExpiry, hashToken);
+
+        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
+
+        ShortLinkUpdate slUpdate = new ShortLinkUpdate(newTargetUrl, newExpiry, false);
+
+        doThrow(new InvalidTokenException(errorMsg, code))
+                .when(authorizationTokenProcessor).authorize(link, tokenInvalid);
+
+        assertThatThrownBy(() -> shortLinkService.updateLink(code, slUpdate, tokenInvalid))
+                .isInstanceOf(InvalidTokenException.class)
+                .hasMessageContaining(errorMsg);
+
+        assertThat(link.getTargetUrl()).isEqualTo(originalTargetUrl);
+        assertThat(link.getExpiresAt()).isEqualTo(originalExpiry);
+    }
+
+    @Test
+    void updateLink_withBothFields_changesTargetUrlAndExpiry() {
+
+        String code = "updateBothFields";
+        Instant newExpiry = Instant.now().plus(1, ChronoUnit.DAYS);
+        String newTargetUrl = "https://new.example.com";
+        String token = "tokenValid";
+
+        ShortLink link = new ShortLink(code, "https://example.com", null, hashToken);
+
+        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
+
+        ShortLinkUpdate slUpdate = new ShortLinkUpdate(newTargetUrl, newExpiry, false);
+
+        ShortLink result = shortLinkService.updateLink(code, slUpdate, token);
+
+        assertThat(result.getTargetUrl()).isEqualTo(newTargetUrl);
+        assertThat(result.getExpiresAt()).isEqualTo(newExpiry);
+    }
+
+    @Test
+    void updateLink_withClearExpiryAndADate_removesTheExpiry() {
+
+        String code = "clearExpiry";
+        Instant expiry = Instant.now().plus(1, ChronoUnit.DAYS);
+        String originalTargetUrl = "https://example.com";
+        String token = "tokenValid";
+
+        ShortLink link = new ShortLink(code, originalTargetUrl, expiry, hashToken);
+
+        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
+
+        ShortLinkUpdate slUpdate = new ShortLinkUpdate(null, expiry, true);
+
+        ShortLink result = shortLinkService.updateLink(code, slUpdate, token);
+
+        assertThat(result.getTargetUrl()).isEqualTo(originalTargetUrl);
+        assertThat(result.getExpiresAt()).isNull();
     }
 
 

@@ -2,12 +2,14 @@ package com.m4r10kyou.shortlinkQr.web;
 
 import com.m4r10kyou.shortlinkQr.domain.ShortLink;
 import com.m4r10kyou.shortlinkQr.dto.ShortLinkCreationResponse;
+import com.m4r10kyou.shortlinkQr.dto.ShortLinkEditionRequest;
 import com.m4r10kyou.shortlinkQr.dto.ShortLinkRequest;
 import com.m4r10kyou.shortlinkQr.dto.ShortLinkResponse;
 import com.m4r10kyou.shortlinkQr.service.CreatedShortLink;
 import com.m4r10kyou.shortlinkQr.service.LogoImageProcessor;
 import com.m4r10kyou.shortlinkQr.service.QrCodeGenerator;
 import com.m4r10kyou.shortlinkQr.service.ShortLinkService;
+import com.m4r10kyou.shortlinkQr.service.ShortLinkUpdate;
 import com.m4r10kyou.shortlinkQr.validation.LogoUploadValidator;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,6 +18,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -72,6 +75,22 @@ public class ShortLinkController {
         return ShortLinkCreationResponse.from(createdShortLink.shortLink(), baseUrl, createdShortLink.rawToken() )  ;
     }
 
+
+    @PatchMapping("/{code}")
+    public ShortLinkResponse editShortLink(@PathVariable("code") String code,
+                                           @RequestHeader(required = false , name ="X-Management-Token")String rawToken,
+                                           @Valid @RequestBody ShortLinkEditionRequest shortLink) {
+
+
+        ShortLinkUpdate shortLinkChangeRequest = new ShortLinkUpdate(shortLink.targetUrl(),
+                                                                    shortLink.expiresAt(),
+                                                                    shortLink.clearExpiry());
+
+        ShortLink shortLinkUpdated = shortLinkService.updateLink(code, shortLinkChangeRequest, rawToken);
+
+        return ShortLinkResponse.from(shortLinkUpdated, baseUrl);
+    }
+
     @GetMapping(value = "/{code}/qr",
                 produces = MediaType.IMAGE_PNG_VALUE)
     public ResponseEntity<byte[]> getQrCode(@PathVariable("code") String code){
@@ -91,6 +110,9 @@ public class ShortLinkController {
                                         @RequestHeader(required = false , name ="X-Management-Token")String rawToken) throws IOException {
 
         logoUploadValidator.validate(file.getSize(), file.getContentType());
+
+        shortLinkService.getByCodeWithAuthorization(code,rawToken);
+
         byte[] imgBytes = file.getBytes();
 
         byte[] sanitizedImgBytes = logoImageProcessor.sanitize(imgBytes);

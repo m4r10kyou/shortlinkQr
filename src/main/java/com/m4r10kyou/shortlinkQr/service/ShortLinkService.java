@@ -77,11 +77,23 @@ public class ShortLinkService {
     }
 
     @Transactional
-    public ShortLink updateDestination(String code, String newTargetUrl) {
+    public ShortLink updateLink(String code, ShortLinkUpdate shortLinkUpdate, String rawToken) {
 
-        ShortLink  shortLink = getShortLink(code);
+        ShortLink shortLink = getShortLinkWithAuthorization(code,rawToken);
 
-        shortLink.changeTargetUrl(newTargetUrl);
+        if (null!= shortLinkUpdate.targetUrl()) {
+
+            shortLink.changeTargetUrl(shortLinkUpdate.targetUrl());
+        }
+
+        if (shortLinkUpdate.clearExpiry()) {
+
+            shortLink.removeExpiry();
+        } else if(null != shortLinkUpdate.expiresAt()){
+
+            shortLink.changeExpiry(shortLinkUpdate.expiresAt());
+        }
+
         return shortLink;
     }
 
