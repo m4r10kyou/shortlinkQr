@@ -8,6 +8,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Objects;
@@ -36,6 +38,9 @@ public class ShortLink {
 
     @Column(nullable = false)
     private int visitCount;
+
+    @Column(length = 64)
+    private String managementTokenHash;
 
 
     public Long getId() {
@@ -74,20 +79,31 @@ public class ShortLink {
     protected ShortLink() {
     }
 
-    public ShortLink(String code, String targetUrl, Instant expiresAt) {
+    public ShortLink(String code, String targetUrl, Instant expiresAt,String managementTokenHash ) {
         this.code = code;
         this.targetUrl = targetUrl;
         this.expiresAt = expiresAt;
 
         this.createdAt = Instant.now();
         this.visitCount = 0;
+
+        this.managementTokenHash = managementTokenHash;
     }
 
     public void changeExpiry(Instant expiresAt) {
+
+        Objects.requireNonNull(expiresAt, "Expiration cannot be null");
+
         this.expiresAt = expiresAt;
     }
 
+    public void removeExpiry(){
+
+        this.expiresAt = null;
+    }
+
     public void changeTargetUrl(String url) {
+        Objects.requireNonNull(url, "Target url cannot be null");
 
         this.targetUrl = url;
     }
@@ -112,6 +128,17 @@ public class ShortLink {
     public boolean hasLogo() {
 
         return null != this.logoData;
+    }
+
+    public boolean matchesManagementToken(String candidateHash) {
+
+        if( null == managementTokenHash || null == candidateHash  || candidateHash.isBlank()){
+
+            return false;
+        }
+
+
+        return MessageDigest.isEqual( managementTokenHash.getBytes(StandardCharsets.UTF_8) , candidateHash.getBytes(StandardCharsets.UTF_8));
     }
 
 }

@@ -17,22 +17,25 @@ public class ShortLinkService {
 
     private final ShortLinkRepository shortLinkRepository;
     private final CodeGenerator codeGenerator;
+    private final ManagementTokenGenerator tokenGenerator;
+    private final AuthorizationTokenProcessor authorizationTokenProcessor;
 
-    public ShortLinkService(ShortLinkRepository shortLinkRepository, CodeGenerator codeGenerator) {
+    public ShortLinkService(ShortLinkRepository shortLinkRepository, CodeGenerator codeGenerator, ManagementTokenGenerator tokenGenerator, AuthorizationTokenProcessor authorizationTokenProcessor) {
 
         this.shortLinkRepository = shortLinkRepository;
         this.codeGenerator = codeGenerator;
+        this.tokenGenerator = tokenGenerator;
+        this.authorizationTokenProcessor = authorizationTokenProcessor;
     }
 
     @Transactional(readOnly = true)
     public ShortLink getByCode(String code) {
 
-        return shortLinkRepository.findByCode(code)
-                .orElseThrow(() -> new ShortLinkNotFoundException(code));
+        return getShortLink(code);
     }
 
     @Transactional
-    public ShortLink createLink(String targetUrl, String customAlias, Instant expiresAt) {
+    public CreatedShortLink createLink(String targetUrl, String customAlias, Instant expiresAt) {
 
         String finalCode;
 
@@ -50,8 +53,11 @@ public class ShortLinkService {
             finalCode = codeGenerator.generate(shortLinkRepository::existsByCode);
         }
 
-        ShortLink shortLink = new ShortLink(finalCode, targetUrl, expiresAt);
-        return shortLinkRepository.save(shortLink);
+        ManagementTokenGenerator.Token token = tokenGenerator.generate();
+
+        ShortLink shortLink = new ShortLink(finalCode, targetUrl, expiresAt, token.tokenHash());
+
+        return new CreatedShortLink( shortLinkRepository.save(shortLink), token.rawToken());
     }
 
     @Transactional
@@ -71,20 +77,53 @@ public class ShortLinkService {
     }
 
     @Transactional
-    public ShortLink updateDestination(String code, String newTargetUrl) {
+    public ShortLink updateLink(String code, ShortLinkUpdate shortLinkUpdate, String rawToken) {
 
-        ShortLink  shortLink = this.getByCode(code);
+        ShortLink shortLink = getShortLinkWithAuthorization(code,rawToken);
 
-        shortLink.changeTargetUrl(newTargetUrl);
+        if (null!= shortLinkUpdate.targetUrl()) {
+
+            shortLink.changeTargetUrl(shortLinkUpdate.targetUrl());
+        }
+
+        if (shortLinkUpdate.clearExpiry()) {
+
+            shortLink.removeExpiry();
+        } else if(null != shortLinkUpdate.expiresAt()){
+
+            shortLink.changeExpiry(shortLinkUpdate.expiresAt());
+        }
+
         return shortLink;
     }
 
     @Transactional
-    public ShortLink attachLogo(String code, byte[] sanitizedBytes){
+    public ShortLink attachLogo(String code, byte[] sanitizedBytes, String rawToken){
 
-        ShortLink  shortLink = this.getByCode(code);
+        ShortLink  shortLink =  getShortLinkWithAuthorization( code,  rawToken);
 
         shortLink.attachLogo(sanitizedBytes);
+
+        return shortLink;
+    }
+
+    @Transactional(readOnly = true)
+    public ShortLink getByCodeWithAuthorization(String code, String rawToken){
+
+        return getShortLinkWithAuthorization(code,rawToken);
+    }
+
+    private ShortLink getShortLink(String code){
+
+        return shortLinkRepository.findByCode(code)
+                .orElseThrow(() -> new ShortLinkNotFoundException(code));
+    }
+
+    private ShortLink getShortLinkWithAuthorization(String code, String rawToken){
+
+        ShortLink shortLink = getShortLink(code);
+
+        authorizationTokenProcessor.authorize(shortLink,rawToken);
 
         return shortLink;
     }

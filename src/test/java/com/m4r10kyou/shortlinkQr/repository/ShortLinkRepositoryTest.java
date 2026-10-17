@@ -1,6 +1,7 @@
 package com.m4r10kyou.shortlinkQr.repository;
 
 import com.m4r10kyou.shortlinkQr.domain.ShortLink;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,17 +15,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DataJpaTest
 class ShortLinkRepositoryTest {
 
+    private final String hashToken = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+
     @Autowired
     private ShortLinkRepository repository;
+
+    @Autowired
+    private EntityManager entityManager;
 
     @BeforeEach
     void setUpShortLinkFixtures() {
 
         ShortLink slWinterDimondi = new ShortLink("DimondiWinter26",
-                "http://www.dimondi-restaurant.com/2026/NovFeb/menu", null);
+                "http://www.dimondi-restaurant.com/2026/NovFeb/menu", null,hashToken);
 
         ShortLink slSummerDimondi = new ShortLink("DimondiSummer26",
-                "http://www.dimondi-restaurant.com/2026/JunSep/menu", null);
+                "http://www.dimondi-restaurant.com/2026/JunSep/menu", null,hashToken);
 
         List<ShortLink> slEntities = List.of(slSummerDimondi, slWinterDimondi);
 
@@ -76,6 +82,15 @@ class ShortLinkRepositoryTest {
         Optional<ShortLink> afterVisit = repository.findByCode("DimondiSummer26");
 
         assertThat(afterVisit.orElseThrow().getVisitCount()).isEqualTo(visitsOrigin + 1);
+    }
+
+    @Test
+    void findByCode_returnsALinkThatStillMatchesItsManagementToken(){
+
+        entityManager.clear();
+        Optional<ShortLink> found = repository.findByCode("DimondiSummer26");
+
+        assertThat(found.orElseThrow().matchesManagementToken(hashToken)).isTrue();
     }
 
 }

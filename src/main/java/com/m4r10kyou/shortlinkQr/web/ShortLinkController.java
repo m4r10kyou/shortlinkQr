@@ -1,11 +1,15 @@
 package com.m4r10kyou.shortlinkQr.web;
 
 import com.m4r10kyou.shortlinkQr.domain.ShortLink;
+import com.m4r10kyou.shortlinkQr.dto.ShortLinkCreationResponse;
+import com.m4r10kyou.shortlinkQr.dto.ShortLinkEditionRequest;
 import com.m4r10kyou.shortlinkQr.dto.ShortLinkRequest;
 import com.m4r10kyou.shortlinkQr.dto.ShortLinkResponse;
+import com.m4r10kyou.shortlinkQr.service.CreatedShortLink;
 import com.m4r10kyou.shortlinkQr.service.LogoImageProcessor;
 import com.m4r10kyou.shortlinkQr.service.QrCodeGenerator;
 import com.m4r10kyou.shortlinkQr.service.ShortLinkService;
+import com.m4r10kyou.shortlinkQr.service.ShortLinkUpdate;
 import com.m4r10kyou.shortlinkQr.validation.LogoUploadValidator;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
@@ -14,9 +18,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -52,20 +58,37 @@ public class ShortLinkController {
     }
 
     @GetMapping("/{code}")
-    public ShortLinkResponse getShortLink(@PathVariable("code") String code) {
+    public ShortLinkResponse getShortLink(@PathVariable("code") String code,
+                                          @RequestHeader(required = false , name ="X-Management-Token")String rawToken) {
 
-        ShortLink shortLink = shortLinkService.getByCode(code);
+        ShortLink shortLink = shortLinkService.getByCodeWithAuthorization(code, rawToken);
 
         return ShortLinkResponse.from(shortLink, baseUrl)  ;
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ShortLinkResponse createShortLink(@Valid @RequestBody ShortLinkRequest request){
+    public ShortLinkCreationResponse createShortLink(@Valid @RequestBody ShortLinkRequest request){
 
-        ShortLink shortLink = shortLinkService.createLink(request.targetUrl(), request.customAlias(), request.expiresAt());
+        CreatedShortLink createdShortLink = shortLinkService.createLink(request.targetUrl(), request.customAlias(), request.expiresAt());
 
-        return ShortLinkResponse.from(shortLink, baseUrl )  ;
+        return ShortLinkCreationResponse.from(createdShortLink.shortLink(), baseUrl, createdShortLink.rawToken() )  ;
+    }
+
+
+    @PatchMapping("/{code}")
+    public ShortLinkResponse editShortLink(@PathVariable("code") String code,
+                                           @RequestHeader(required = false , name ="X-Management-Token")String rawToken,
+                                           @Valid @RequestBody ShortLinkEditionRequest shortLink) {
+
+
+        ShortLinkUpdate shortLinkChangeRequest = new ShortLinkUpdate(shortLink.targetUrl(),
+                                                                    shortLink.expiresAt(),
+                                                                    shortLink.clearExpiry());
+
+        ShortLink shortLinkUpdated = shortLinkService.updateLink(code, shortLinkChangeRequest, rawToken);
+
+        return ShortLinkResponse.from(shortLinkUpdated, baseUrl);
     }
 
     @GetMapping(value = "/{code}/qr",
@@ -83,14 +106,18 @@ public class ShortLinkController {
 
     @PostMapping(value = "/{code}/logo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ShortLinkResponse uploadLogo(@PathVariable("code") String code,
-                                        @RequestParam("file") MultipartFile file) throws IOException {
+                                        @RequestParam("file") MultipartFile file,
+                                        @RequestHeader(required = false , name ="X-Management-Token")String rawToken) throws IOException {
 
         logoUploadValidator.validate(file.getSize(), file.getContentType());
+
+        shortLinkService.getByCodeWithAuthorization(code,rawToken);
+
         byte[] imgBytes = file.getBytes();
 
         byte[] sanitizedImgBytes = logoImageProcessor.sanitize(imgBytes);
 
-        ShortLink shortLink = shortLinkService.attachLogo(code, sanitizedImgBytes);
+        ShortLink shortLink = shortLinkService.attachLogo(code, sanitizedImgBytes,rawToken);
 
         return ShortLinkResponse.from(shortLink, baseUrl);
     }

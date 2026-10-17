@@ -60,7 +60,8 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 - An expiry computed in local time and compared on a server in another zone expires early or late
 
 **Behaviour over setters.** *The entity encapsulates its own logic and state transitions to guarantee internal consistency at all times*
-- The entity exposes `changeTargetUrl`, `attachLogo`, `removeLogo` instead of a setter per field
+- The entity exposes `changeTargetUrl`, `changeExpiry`, `removeExpiry`, `attachLogo` and `removeLogo` instead of a setter per field
+- The mutators reject null. `removeExpiry` and `removeLogo` are the only ways to clear those fields, so "set this to nothing" is always an explicit call and never a null arriving from a layer above. Those guards are what make the partial-update rule enforceable rather than merely followed
 - `attachLogo` and `getLogoData` copy the array on the way in and on the way out. A `byte[]` is mutable, unlike the `String` fields around it, so handing out the internal reference would let any caller rewrite the entity's state without going through a method — which is what this section exists to prevent. Two tests pin it.
 
 **Exceptions carry no HTTP semantics.** *Domain errors remain agnostic to the web transport layer, ensuring reusability across the different contexts*
@@ -94,6 +95,52 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 **URL validation.** *A regular expression cannot accurately express URI syntax.*
 - A URL with a space would pass a simple regex validation, get saved to the database, and crash with a 500 error during the public redirect.
 - Validation is performed by constructing a `java.net.URI` within a custom constraint validator, which also verifies the allowed schemes (HTTP/HTTPS).
+
+### Authorization
+
+**A capability, not an identity.** *The system has resources and no principals.*
+- There are no accounts, so there is nothing to authenticate. Creating a link returns a 32-byte `SecureRandom` token, shown once; possession of it is the entire authorisation. The link stores only its SHA-256 digest.
+- A JWT was the obvious alternative and buys nothing here: there is no subject to put in the claims, statelessness saves no work when the link has to be loaded from the database anyway, revocation would need a blocklist — which is the state the statelessness was supposed to avoid — and expiry is actively harmful for a QR printed on a wall for two years.
+- The short code cannot be the credential. It travels in the URL and gets printed on signs. A public identifier is not a secret.
+
+**SHA-256, not BCrypt.** *Slow hashing exists for low-entropy secrets.*
+- BCrypt and Argon2 are deliberately slow because human passwords are guessable and the defence is making each guess expensive. 32 bytes from `SecureRandom` are not guessable at any speed, so the slowness would buy nothing and cost around 100 ms of CPU on every authorised request.
+- No salt, for the same reason: a salt defends against precomputed tables over a small, predictable input space, and no table covers 2^256.
+- It is the same reasoning GitHub applies to personal access tokens.
+
+**403 for everything, and always the same 403.** *A missing token, a wrong token and a token for another link are one answer.*
+- Not 401: a `WWW-Authenticate` challenge would have nothing to ask the client for.
+- The comparison is `MessageDigest.isEqual`, constant time, so response timing does not leak how much of a guess was right.
+- A link with no stored hash denies. The guard fails closed, and deleting it turns a test red, which is how we know the deny is load-bearing rather than decorative.
+- The failing code goes to the log and not to the response body. The owner of the service can correlate it; the caller who has just proved they are not the owner of the link learns nothing. It is the one error in this API that does not publish its identifier, and the 404 and the 403 therefore look different on purpose.
+
+**What the token does not cover.** *The redirect and the QR stay public.*
+- Scanning is the product. If the redirect ever required a header, every printed code would stop working.
+- The management read is behind the token, because it exposes the destination and the visit count.
+
+**The upload authorises twice.** *Deliberate, not a leftover.*
+- The controller authorises before reading the file bytes, so a rejected caller costs no image decoding — the cheap defence against someone firing large files at an endpoint they cannot use.
+- The service authorises again when it attaches the logo. The endpoint stays correct if the controller's early check is ever removed, and the service method is safe to call from anywhere else.
+
+**The token cannot be recovered or rotated.** *Only the digest is stored.*
+- Lose it and the link is read-only for good. Rotation would be a new endpoint authorised by the very token being rotated: a reasonable next feature, not this one.
+
+### Partial updates
+
+**`PATCH`, not `PUT`.** *Updates are partial by nature.*
+- `PUT` would mean sending the whole representation on every edit, including the fields the client does not care about. It is left unmapped, and the collection asserts the 405.
+
+**An absent field means "leave it alone".** *Null is not an instruction.*
+- The request record carries `null` for anything the client did not send, and the service only touches what it was given. A request that changes the destination must not silently clear the expiry.
+
+**`clearExpiry`, not a sentinel date.** *The model can express it; the protocol cannot.*
+- A null expiry already means "never expires", so sending `null` cannot also mean "remove it": absent and null are the same thing on the wire.
+- The alternatives were worse. `9999-12-31` is not perpetual, it expires in 7973 years and leaves a lie in the column. `-1` is not a date at all. A `DELETE /api/links/{code}/expiry` sub-resource would work, but two paths to one state is two things to keep in agreement.
+- Sending both a date and the flag is contradictory and rejected at the boundary. The service still resolves it deterministically — the flag wins — because a public method has to behave predictably even when something calls it without validation in front.
+
+**`Boolean`, not `boolean`, in the request record.** *Spring Boot 4 ships Jackson 3, which changed a default.*
+- Jackson 3 enables `FAIL_ON_NULL_FOR_PRIMITIVES`. An absent primitive in a record component is treated as null, the body fails to bind, and the client gets a 400 that says "Failed to read request" and names nothing.
+- Disabling the feature globally would have fixed this one field and silenced a genuine error everywhere else. The record takes a `Boolean` and normalises absent to `false` in its compact constructor instead, so the rest of the application still receives a primitive and the check stays on for every other DTO.
 
 ### QR codes
 
@@ -193,8 +240,7 @@ Three levels, each with a different cost and purpose:
 
 - **JSON on public endpoints:** Scanning a dead, invalid, or expired QR code currently returns a JSON document in the browser. While correct for an API, it provides a poor experience for a human user. Pending: an HTML fallback page for the public redirect endpoint.
 - **Problem Types are URNs:** The `type` fields in the error responses are URNs, not dereferenceable URLs. This is a conscious decision not to invent a documentation URL that does not actually exist.
-- **Mutations are not authorized.** `POST /api/links/{code}/logo` changes a link, and the only thing it asks for is the short code — which is printed on signs, so it is not a secret and cannot work as a credential. Anyone who can read the sign can replace the logo on that QR. No `PATCH` or `DELETE` endpoint exists yet for the same reason, and the next branch is a per-link management token that gates all three.
-- **Persistence is not covered by tests.** `updateDestination` and `attachLogo` rely on Hibernate's dirty checking inside `@Transactional`, with no explicit `save`. The service tests are Mockito unit tests with no `EntityManager`, so they prove the entity is mutated but not that the change is ever flushed. Removing `@Transactional` from either method would break the feature silently and leave every test green. Closing this gap needs a `@DataJpaTest` against a real persistence context.
+- **Persistence is not covered by tests.** `updateLink` and `attachLogo` rely on Hibernate's dirty checking inside `@Transactional`, with no explicit `save`. The service tests are Mockito unit tests with no `EntityManager`, so they prove the entity is mutated but not that the change is ever flushed. Removing `@Transactional` from either method would break the feature silently and leave every test green. Closing this gap needs a `@DataJpaTest` against a real persistence context.
 - **The management GET loads the logo to answer a boolean.** `getByCode` fetches the whole entity, `@Lob` included, and `hasLogo` is derived from it. A `@Basic(fetch = LAZY)` on a basic attribute does nothing without bytecode enhancement, so the blob travels on every read of a link that has one. The redirect path already avoids this with a projection; the management path would need its own.
 
 ## 🛠️ Tech Stack
@@ -209,7 +255,7 @@ Three levels, each with a different cost and purpose:
   - **AssertJ** (Fluent and semantic assertions)
   - **MockMvc** (HTTP layer simulation)
   - **Postman** (API contract validation)
-  
+
 ## 🚀 How to Run
 
 You can easily start the application from your terminal using the Maven wrapper.
@@ -231,7 +277,7 @@ You can easily start the application from your terminal using the Maven wrapper.
    http://localhost:9080
    ```
 4. Database Access:
-   
+
    *You can inspect the local database using the H2 Console at:*
    ```text
    http://localhost:9080/h2-console 
@@ -239,20 +285,20 @@ You can easily start the application from your terminal using the Maven wrapper.
 
 ## 🧪 Testing the API
 
-The collection at [`docs/shortlinkQr.postman_collection.json`](docs/shortlinkQr.postman_collection.json) works as an
+The collection at [`docs/shortlinkQr-API.postman_collection.json`](docs/shortlinkQr-API.postman_collection.json) works as an
 executable specification. Import it into Postman and run it with the Collection
 Runner: every request asserts its expected status and body, so the result is a
 pass/fail report rather than something to inspect by eye.
 
-Three requests upload a file from `docs/`, referenced relatively, so set
+Four requests upload a file from `docs/`, referenced relatively, so set
 Postman's working directory (Settings → General) to the repository root before
 running the collection.
 
-Twenty-eight requests across five folders:
+Thirty-eight requests across six folders:
 
 - **Links API** — creation and retrieval, including the alias conflict. The
-  generated code is captured into a variable, so later requests need no manual
-  copying.
+  generated code and the management token are captured into variables, so later
+  requests need no manual copying.
 - **Validation** — every constraint on the request DTO, each one checked against
   the field it should name in the `errors` map.
 - **Protocol errors** — malformed JSON, unsupported method, unsupported media
@@ -263,30 +309,38 @@ Twenty-eight requests across five folders:
 - **QR & Logo** — the QR endpoint before and after an upload, asserting that the
   branded symbol comes back as a different, larger image; plus a rejected file
   and an unknown code.
+- **Authorization & edition** — the `PATCH` in its four shapes, the two
+  contradictory ones rejected at the boundary, and 403 for a missing and a wrong
+  token on all three guarded endpoints. One request fetches the QR without a
+  header and asserts the 200: the symbol has to stay public.
 
-Last full run: 60 assertions, 60 passed.
+Last full run: 82 assertions, 82 passed.
 
 ## 📋 Project Status
 
 - [x] **Project setup** — Spring Boot, JPA, H2, configuration
 - [x] **Domain model and persistence**
-   - [x] `ShortLink` entity with JPA mapping
-   - [x] Repository with derived queries
-   - [x] Atomic visit counter
+  - [x] `ShortLink` entity with JPA mapping
+  - [x] Repository with derived queries
+  - [x] Atomic visit counter
 - [x] **Core business logic**
-   - [x] Base62 code generator with collision retry
-   - [x] Link creation, resolution and retargeting
-   - [x] Domain exceptions
+  - [x] Base62 code generator with collision retry
+  - [x] Link creation, resolution and retargeting
+  - [x] Domain exceptions
+- [x] **Authorization**
+  - [x] Per-link management token, issued on creation
+  - [x] Guarded mutations and management read
+  - [x] Partial updates with `PATCH`
 - [x] **REST API**
-   - [x] Request/response DTOs with validation
-   - [x] Management endpoints
-   - [x] Public redirect endpoint
-   - [x] HTTP error mapping
+  - [x] Request/response DTOs with validation
+  - [x] Management endpoints
+  - [x] Public redirect endpoint
+  - [x] HTTP error mapping
 - [x] **QR code generation**
-   - [x] QR rendering
-   - [x] Logo embedding
-   - [x] Logo upload and sanitization
+  - [x] QR rendering
+  - [x] Logo embedding
+  - [x] Logo upload and sanitization
 - [ ] **Deployment**
-   - [ ] Dockerfile
-   - [ ] PostgreSQL profile
-   - [ ] CI pipeline
+  - [ ] Dockerfile
+  - [ ] PostgreSQL profile
+  - [ ] CI pipeline
