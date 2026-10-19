@@ -1,5 +1,7 @@
 # Short URL & QR Code Generator
 
+![CI](https://github.com/m4r10kyou/shortlinkQr/actions/workflows/ci.yml/badge.svg)
+
 A backend service that converts long URLs into trackable short links and customizable QR codes.
 
 > 🚧 **Note:** This project is currently under construction.
