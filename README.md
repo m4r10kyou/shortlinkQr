@@ -1,5 +1,7 @@
 # Short URL & QR Code Generator
 
+![CI](https://github.com/m4r10kyou/shortlinkQr/actions/workflows/ci.yml/badge.svg)
+
 A backend service that converts long URLs into trackable short links and customizable QR codes.
 
 > 🚧 **Note:** This project is currently under construction.
@@ -49,7 +51,7 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 ### Redirect path
 
 **The redirect reads two columns.** *A projection, not the entity.*
-- `resolveCode` needs the target URL and the expiry date. Loading the `ShortLink` entity fetched every column, including the `@Lob` holding the logo bytes, on the endpoint that every scan of every printed QR hits.
+- `resolveCode` needs the target URL and the expiry date. Loading the `ShortLink` entity fetched every column, including the one holding the logo bytes, on the endpoint that every scan of every printed QR hits.
 - A `RedirectTarget` projection narrows the query to `select target_url, expires_at from short_links where code = ?`. The logo never leaves the database on that path.
 - The expiry rule lives in `ExpirationPolicy`, shared by the entity and the service, so "expired" has one definition rather than one per caller.
 
@@ -68,6 +70,35 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 - Plain `RuntimeException` subclasses, no `@ResponseStatus`
 - Mapping to 404/409/410 belongs to the web layer
 - Keeps the service usable from a batch job or a message consumer, where HTTP means nothing
+
+### Schema and migrations
+
+**Flyway owns the schema, in every environment.** *One migration, one source of truth.*
+- `ddl-auto` is `validate` everywhere, so Hibernate compares the entity against the schema at startup and refuses to start when the two disagree. A mismatch becomes a boot failure naming the column, instead of a query failing in production months later.
+- H2 runs with `;MODE=PostgreSQL` in development and in tests, so a single `V1__create_short_links.sql` serves every environment. A migration set per database would mean the thing being tested is not the thing being deployed.
+- Applied migrations are immutable. Flyway stores a checksum of each one, and editing a file that has already run stops the application; changes go in a new version.
+
+**`bytea`, not a large object.** *`@Lob` on a `byte[]` means different things on different databases.*
+- Hibernate maps `@Lob byte[]` to PostgreSQL's `oid`: the bytes live outside the row in `pg_largeobject`, reached through a handle, and deleting the row does not remove them unless something calls `lo_unlink`. On H2 the same annotation was harmless, which is exactly why the problem would only have surfaced on the way to production.
+- The column is declared `bytea` in the migration and the annotation is gone. A logo of at most a few megabytes belongs in the row.
+
+### Deployment
+
+**Three profiles, and no default.** *The application refuses to start without being told where it is running.*
+- `dev` is H2 in a file, `test` is H2 in memory, `prod` is PostgreSQL. The shared `application.properties` holds only what every environment agrees on.
+- Nothing is active by default, so a deployment that forgets to name its profile fails at startup instead of quietly running against the wrong database.
+- The `prod` profile reads its connection details from environment variables with no fallback values. A missing variable is a boot failure, not a silent connection to something else.
+
+**The H2 console is disabled explicitly in production.** *Defence in depth for a profile that does not use H2 at all.*
+- It costs one line, and it removes any path by which a database console with a blank `sa` password could become reachable on a public address.
+
+**Production logs to stdout.** *The container is ephemeral.*
+- A log file written inside the container is discarded along with it, so the platform collects stdout instead. `dev` still writes a file, because that machine persists.
+
+**The image is built in two stages.**
+- Dependencies are resolved before the sources are copied, so editing a class does not invalidate the dependency layer.
+- The runtime stage carries a JRE and the jar alone: no sources, no Maven, no local repository, and a non-root user.
+- Tests do not run during the image build. Finding out that something is broken belongs in CI, not in packaging.
 
 ### API & Web Layer
 
@@ -201,7 +232,7 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 **Upload size is limited at two layers, with two different numbers.** *The container's limit is not the application's limit.*
 - `spring.servlet.multipart.max-file-size` and `max-request-size` are enforced by Tomcat before the controller method exists. Both are set, because the first caps each part and the second the whole body: with only the first, twenty parts of 1 MB each still arrive.
 - `shortlink.logo.max-upload-bytes` repeats that limit inside the application, because a validator cannot depend on a framework property it does not own.
-- `shortlink.logo.max-stored-bytes` is a larger number, checked after the re-encode. A 900 KB lossy JPEG becomes a lossless PNG of several megabytes, so a file that passed every input limit can still produce a `@Lob` nobody wants. A single shared limit would reject it only after doing all the work.
+- `shortlink.logo.max-stored-bytes` is a larger number, checked after the re-encode. A 900 KB lossy JPEG becomes a lossless PNG of several megabytes, so a file that passed every input limit can still produce a stored image nobody wants. A single shared limit would reject it only after doing all the work.
 - All four logo limits are properties rather than constants. Not only for configurability: injecting them is what lets a test exercise the dimension and size checks without fabricating an oversized fixture.
 
 **The endpoint measures before it materialises.** *The same rule as the decoder, one layer up.*
@@ -216,8 +247,9 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 
 ### Testing
 
-Three levels, each with a different cost and purpose:
-- **`@DataJpaTest`** — real (in-memory) database, for the repository.
+Four levels, each with a different cost and purpose:
+- **Testcontainers** — a real PostgreSQL in Docker, for the migration, the column types and the constraints.
+- **`@DataJpaTest`** — in-memory database, for the repository's derived queries.
 - **Mockito** — no database, for the service's own decisions.
 - **MockMvc** — simulated HTTP requests for the web layer.
 
@@ -235,22 +267,28 @@ Three levels, each with a different cost and purpose:
 - **Database integrity:** Failure-path tests also explicitly verify that no visit is recorded.
 - **Round-trip testing:** *Generate, decode, and compare with the original URL.* This is the only assertion that proves the image can actually be scanned. It is also the instrument used to measure how far the logo can grow.
 - **Decoding without the detector:** Round-trip tests decode with `PURE_BARCODE`. Without that hint ZXing locates the finder patterns and resamples through a perspective transform, and for some module patterns a sample point lands on a module boundary: one code in ten failed to decode from a perfectly generated PNG. The pre-existing round-trip test was green only because its URL happened to fall on the right side of that.
+- **Persistence is proved, not assumed:** The Testcontainers tests clear the persistence context before reading back, and assert that the instance they read is not the instance they saved. Without that, Hibernate's first-level cache would satisfy every assertion against an empty database.
+- **Constraint names, not just exception types:** The uniqueness test asserts that `uk_short_links_code` appears in the error. Asserting only `DataIntegrityViolationException` would pass for any integrity failure, including one coming from a different column.
+- **Values chosen to expose the mapping:** The logo test uses bytes containing a zero and a high byte, so a column that stopped at the first null would fail. The expiry test uses microsecond precision, matching the column, because a value carrying nanoseconds would be silently truncated on the way in.
 
 ## ⚠️ Known Limitations
 
 - **JSON on public endpoints:** Scanning a dead, invalid, or expired QR code currently returns a JSON document in the browser. While correct for an API, it provides a poor experience for a human user. Pending: an HTML fallback page for the public redirect endpoint.
 - **Problem Types are URNs:** The `type` fields in the error responses are URNs, not dereferenceable URLs. This is a conscious decision not to invent a documentation URL that does not actually exist.
-- **Persistence is not covered by tests.** `updateLink` and `attachLogo` rely on Hibernate's dirty checking inside `@Transactional`, with no explicit `save`. The service tests are Mockito unit tests with no `EntityManager`, so they prove the entity is mutated but not that the change is ever flushed. Removing `@Transactional` from either method would break the feature silently and leave every test green. Closing this gap needs a `@DataJpaTest` against a real persistence context.
-- **The management GET loads the logo to answer a boolean.** `getByCode` fetches the whole entity, `@Lob` included, and `hasLogo` is derived from it. A `@Basic(fetch = LAZY)` on a basic attribute does nothing without bytecode enhancement, so the blob travels on every read of a link that has one. The redirect path already avoids this with a projection; the management path would need its own.
+- **The management GET loads the logo to answer a boolean.** `getByCode` fetches the whole entity, logo bytes included, and `hasLogo` is derived from it. A `@Basic(fetch = LAZY)` on a basic attribute does nothing without bytecode enhancement, so the blob travels on every read of a link that has one. The redirect path already avoids this with a projection; the management path would need its own.
 
 ## 🛠️ Tech Stack
 - **Java 21**
 - **Spring Boot 4.1**
 - **Spring Data JPA**
-- **H2 Database** (file-based, local development)
+- **Flyway** (schema migrations, one set for every environment)
+- **PostgreSQL** (production)
+- **H2 Database** (file-based in development, in-memory in tests, both in PostgreSQL compatibility mode)
+- **Docker** (multi-stage image build)
 - **ZXing** (`core` for encoding, `javase` for the bridge to `BufferedImage`).
 - **Testing Ecosystem:**
   - **JUnit 5**
+  - **Testcontainers** (a real PostgreSQL for the persistence tests)
   - **Mockito** (Mocking domain logic without database overhead)
   - **AssertJ** (Fluent and semantic assertions)
   - **MockMvc** (HTTP layer simulation)
@@ -258,19 +296,22 @@ Three levels, each with a different cost and purpose:
 
 ## 🚀 How to Run
 
-You can easily start the application from your terminal using the Maven wrapper.
+Requirements: Java 21, and Docker running if you intend to execute the test
+suite.
 
 1. Clone the repository and navigate to the project folder:
    ```bash
    git clone https://github.com/m4r10kyou/shortlinkQr
    cd shortlinkQr
    ```
-2. Run the Spring Boot application:
+2. Run the Spring Boot application with the development profile:
     ```bash
-    ./mvnw spring-boot:run
+    ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
     ```
-   *(If you are using Windows, run `mvnw.cmd spring-boot:run` instead).*
+   *(If you are using Windows, run `mvnw.cmd` instead).*
 
+   The profile is not optional. No profile is active by default, so the
+   application will not start without being told which environment it is in.
 
 3. Once the application starts, it will be available at:
    ```text
@@ -280,8 +321,17 @@ You can easily start the application from your terminal using the Maven wrapper.
 
    *You can inspect the local database using the H2 Console at:*
    ```text
-   http://localhost:9080/h2-console 
-   ```  
+   http://localhost:9080/h2-console
+   ```
+   *The JDBC URL in the console form must match the one in
+   `application-dev.properties` exactly, or it will open a different, empty
+   database. The console is enabled in `dev` only.*
+
+5. Run the test suite:
+   ```bash
+   ./mvnw clean test
+   ```
+   *Docker must be running: the persistence tests start a PostgreSQL container.*
 
 ## 🧪 Testing the API
 
@@ -341,6 +391,9 @@ Last full run: 82 assertions, 82 passed.
   - [x] Logo embedding
   - [x] Logo upload and sanitization
 - [ ] **Deployment**
-  - [ ] Dockerfile
-  - [ ] PostgreSQL profile
+  - [x] Flyway migrations with `validate` in every profile
+  - [x] PostgreSQL profile
+  - [x] Multi-stage Dockerfile
+  - [x] Persistence tests against a real PostgreSQL
   - [ ] CI pipeline
+  - [ ] Deployed instance
