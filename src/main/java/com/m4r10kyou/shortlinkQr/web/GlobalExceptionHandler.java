@@ -1,6 +1,7 @@
 package com.m4r10kyou.shortlinkQr.web;
 
 import com.m4r10kyou.shortlinkQr.exception.AliasAlreadyExistsException;
+import com.m4r10kyou.shortlinkQr.exception.InvalidAdminTokenException;
 import com.m4r10kyou.shortlinkQr.exception.InvalidLogoException;
 import com.m4r10kyou.shortlinkQr.exception.InvalidTokenException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkExpiredException;
@@ -140,6 +141,21 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         );
         problem.setTitle("Not Authorized");
         problem.setType(URI.create("urn:problem-type:invalid-management-token"));
+
+        return problem;
+    }
+
+    @ExceptionHandler(InvalidAdminTokenException.class)
+    public ProblemDetail handleAdminToken(InvalidAdminTokenException ex){
+
+        log.warn("Rejected health for wrong admin token");
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.FORBIDDEN,
+                ex.getMessage()
+        );
+        problem.setTitle("Not Authorized");
+        problem.setType(URI.create("urn:problem-type:invalid-admin-token"));
 
         return problem;
     }
