@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>shortlinkQr</title>
+<style>
+  :root {
+    --bg: #fbfbfa;
+    --fg: #1c1b19;
+    --muted: #6b6762;
+    --rule: #e2dfda;
+    --accent: #1c1b19;
+    --code-bg: #f1efec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171716;
+      --fg: #e8e6e3;
+      --muted: #9a958e;
+      --rule: #2e2d2b;
+      --accent: #e8e6e3;
+      --code-bg: #212120;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 4rem 1rem;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  main { max-width: 42rem; margin: 0 auto; }
+
+  h1 {
+    font-size: 1.6rem;
+    letter-spacing: -0.02em;
+    margin: 0 0 0.25rem;
+  }
+
+  .tagline { color: var(--muted); margin: 0 0 2.5rem; }
+
+  h2 {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-weight: 600;
+    margin: 2.5rem 0 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  p { margin: 0 0 1rem; }
+
+  code {
+    background: var(--code-bg);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+    font: 0.875em/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  pre {
+    background: var(--code-bg);
+    padding: 0.9rem 1rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 0 0 1rem;
+  }
+  pre code { background: none; padding: 0; }
+
+  dl { margin: 0; }
+  dt {
+    font: 0.875rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    margin-top: 1rem;
+  }
+  dd { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.9375rem; }
+
+  a { color: var(--accent); text-underline-offset: 0.2em; }
+
+  footer {
+    margin-top: 3.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--rule);
+    color: var(--muted);
+    font-size: 0.875rem;
+  }
+</style>
+</head>
+<body>
+<main>
+
+  <h1>shortlinkQr</h1>
+  <p class="tagline">A URL shortener whose QR codes can be re-pointed after they are printed.</p>
+
+  <p>
+    The QR code encodes the <em>short link</em>, not the destination. Change where
+    the link points and every code already printed follows, with no reprint.
+  </p>
+
+  <p>
+    This is a backend service. There is no web interface — the endpoints below are
+    the product, and this page exists so that the root of the domain says something
+    useful instead of returning an error.
+  </p>
+
+  <h2>Try it</h2>
+
+  <pre><code>curl -X POST https://shortlinkqr.onrender.com/api/links \
+  -H 'Content-Type: application/json' \
+  -d '{"targetUrl":"https://example.com"}'</code></pre>
+
+  <p>
+    The response carries the short URL and a management token, shown once and never
+    again. That token is what authorises later edits to the link.
+  </p>
+
+  <h2>Endpoints</h2>
+
+  <dl>
+    <dt>POST /api/links</dt>
+    <dd>Create a link. Optionally with a custom alias and an expiry date.</dd>
+
+    <dt>GET /{code}</dt>
+    <dd>The public redirect. Counts a visit and sends the caller to the destination.</dd>
+
+    <dt>GET /api/links/{code}/qr</dt>
+    <dd>The QR code as a PNG, generated on demand and never stored.</dd>
+
+    <dt>PATCH /api/links/{code}</dt>
+    <dd>Re-point the link or change its expiry. Requires the management token.</dd>
+
+    <dt>POST /api/links/{code}/logo</dt>
+    <dd>Place a logo at the centre of the symbol. Requires the management token.</dd>
+
+    <dt>GET /api/health/ping</dt>
+    <dd>Liveness. Answers without touching anything.</dd>
+  </dl>
+
+  <h2>Note</h2>
+
+  <p>
+    This runs on free hosting and goes to sleep when nothing is using it, so the
+    first request after a quiet spell can take a few seconds.
+  </p>
+
+  <footer>
+    Source, and the reasoning behind every decision in it, at
+    <a href="https://github.com/m4r10kyou/shortlinkQr">github.com/m4r10kyou/shortlinkQr</a>.
+  </footer>
+
+</main>
+</body>
+</html>
