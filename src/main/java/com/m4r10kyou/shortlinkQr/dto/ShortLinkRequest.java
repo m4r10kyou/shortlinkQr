@@ -2,6 +2,7 @@ package com.m4r10kyou.shortlinkQr.dto;
 
 import com.m4r10kyou.shortlinkQr.domain.ShortLinkConstraints;
 import com.m4r10kyou.shortlinkQr.validation.HttpUrl;
+import com.m4r10kyou.shortlinkQr.validation.NotReservedAlias;
 import jakarta.validation.constraints.*;
 
 import java.time.Instant;
@@ -21,6 +22,7 @@ public record ShortLinkRequest(
                 min = ShortLinkConstraints.CODE_MIN_LENGTH,
                 max = ShortLinkConstraints.CODE_MAX_LENGTH,
                 message = "Alias must be between {min} and {max} characters")
+        @NotReservedAlias
         String customAlias,
 
         @Future(message = "Expiry date must be in the future")

@@ -285,6 +285,8 @@ class ShortLinkControllerTest {
         mockMvc.perform(post("/api/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json))
+                .andExpect(header().string("Location", "http://short.test/tokenmng-repo"))
+                .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.managementToken").value("raw-token"));
     }
@@ -551,6 +553,29 @@ class ShortLinkControllerTest {
                 .andExpect(jsonPath("$.errors").doesNotExist());
 
         verify(shortLinkService, never()).updateLink(any(), any(), any());
+    }
+
+    @Test
+    void createLink_withNotAllowedAlias_returns400AndErrorCustomAlias() throws Exception {
+
+        String customAlias = "api";
+        String targetUrl = "https://www.github.com/someone";
+
+        String json = """
+        {
+            "customAlias": "%s",
+            "targetUrl": "%s"
+        }
+        """.formatted(customAlias,targetUrl);
+
+        mockMvc.perform(post("/api/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.customAlias").exists());
+
+        verify(shortLinkService, never()).createLink(any(), any(), any());
+
     }
 
 }

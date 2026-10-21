@@ -14,6 +14,7 @@ import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -392,6 +393,21 @@ class ShortLinkServiceTest {
         assertThat(result.getExpiresAt()).isNull();
     }
 
+    @Test
+    void createLink_whenTheAliasIsTakenConcurrently_throwsAliasAlreadyExists(){
+
+        String targetUrl = "https://example.com";
+        String customAlias = "aliasTaken";
+
+        stubTokenGenerator();
+
+        when(shortLinkRepository.save(any()))
+                .thenThrow(new DataIntegrityViolationException("duplicate key"));
+
+        assertThatThrownBy(() -> shortLinkService.createLink(targetUrl,customAlias,null))
+                .isInstanceOf(AliasAlreadyExistsException.class)
+                .extracting("alias").isEqualTo(customAlias);
+    }
 
     private RedirectTarget redirectTargetExpiringAt(String url, Instant when) {
 

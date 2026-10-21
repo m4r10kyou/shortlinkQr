@@ -7,6 +7,7 @@ import com.m4r10kyou.shortlinkQr.exception.ShortLinkExpiredException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkNotFoundException;
 import com.m4r10kyou.shortlinkQr.repository.RedirectTarget;
 import com.m4r10kyou.shortlinkQr.repository.ShortLinkRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,8 +39,10 @@ public class ShortLinkService {
     public CreatedShortLink createLink(String targetUrl, String customAlias, Instant expiresAt) {
 
         String finalCode;
+        boolean usedCustomAlias = customAlias != null && !customAlias.isBlank();
 
-        if (customAlias != null && !customAlias.isBlank()) {
+
+        if (usedCustomAlias) {
 
             if (shortLinkRepository.existsByCode(customAlias)) {
 
@@ -57,7 +60,19 @@ public class ShortLinkService {
 
         ShortLink shortLink = new ShortLink(finalCode, targetUrl, expiresAt, token.tokenHash());
 
-        return new CreatedShortLink( shortLinkRepository.save(shortLink), token.rawToken());
+        try {
+
+            return new CreatedShortLink( shortLinkRepository.save(shortLink), token.rawToken());
+
+        } catch (DataIntegrityViolationException dive) {
+
+            if(usedCustomAlias){
+
+                throw new AliasAlreadyExistsException(customAlias);
+            }
+
+            throw dive;
+        }
     }
 
     @Transactional
