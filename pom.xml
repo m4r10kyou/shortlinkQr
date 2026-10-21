@@ -10,7 +10,7 @@
 	</parent>
 	<groupId>com.m4r10kyou</groupId>
 	<artifactId>shortlinkQr</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<version>0.1.0</version>
 	<name>shortlinkQr</name>
 	<description>URL shortener whose QR codes encode the short link, so a printed code can be re-pointed without reprinting</description>
 	<url>https://github.com/m4r10kyou/shortlinkQr</url>
