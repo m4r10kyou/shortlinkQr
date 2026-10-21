@@ -30,6 +30,7 @@
 		<java.version>21</java.version>
 		<zxing.version>3.5.4</zxing.version>
 		<testcontainers.version>2.0.5</testcontainers.version>
+		<actuator.version>4.1.1</actuator.version>
 	</properties>
 
 	<dependencyManagement>
@@ -64,7 +65,7 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
-			<version>4.2.0-M1</version>
+			<version>${actuator.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>com.h2database</groupId>
