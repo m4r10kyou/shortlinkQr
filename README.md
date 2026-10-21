@@ -1,10 +1,12 @@
 # Short URL & QR Code Generator
 
 ![CI](https://github.com/m4r10kyou/shortlinkQr/actions/workflows/ci.yml/badge.svg)
+<a href="https://stats.uptimerobot.com/Au8WWQRPE6?utm_source=status_badge&utm_medium=referral" target="_blank" rel="noopener"><picture><source media="(prefers-color-scheme: dark)" srcset="https://badge.uptimerobot.com/psp/dedaf8b05e48e1034cf3a37c74c77eb9.svg?style=logo&theme=dark"><img src="https://badge.uptimerobot.com/psp/dedaf8b05e48e1034cf3a37c74c77eb9.svg?style=logo&theme=light" alt="shortlinkqr.onrender.com"></picture></a>
+![Uptime 30d](https://img.shields.io/uptimerobot/ratio/30/m804357575-040a3f2b579c23775389f929)
 
 A backend service that converts long URLs into trackable short links and customizable QR codes.
 
-> 🚧 **Note:** This project is currently under construction.
+**Live:** [shortlinkqr.onrender.com](https://shortlinkqr.onrender.com)
 
 ## 💡 The Idea (The "Why")
 While many URL shorteners exist, the core value of this service lies in **dynamic QR redirection**.
@@ -89,6 +91,10 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 - Nothing is active by default, so a deployment that forgets to name its profile fails at startup instead of quietly running against the wrong database.
 - The `prod` profile reads its connection details from environment variables with no fallback values. A missing variable is a boot failure, not a silent connection to something else.
 
+**The application does not know who hosts it.** *Everything environment-specific arrives as a variable.*
+- The database, the base URL and the admin token all come from the environment. Moving from one provider to another is a matter of changing values, not code — which is exactly what happened when the first choice of host turned out to cost $38/month for a database that will hold a few dozen rows.
+- The port comes from the environment too, because platforms assign one and expect the service to listen on it. The default stays at 9080 for local runs, where no such variable exists.
+
 **The H2 console is disabled explicitly in production.** *Defence in depth for a profile that does not use H2 at all.*
 - It costs one line, and it removes any path by which a database console with a blank `sa` password could become reachable on a public address.
 
@@ -99,6 +105,24 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 - Dependencies are resolved before the sources are copied, so editing a class does not invalidate the dependency layer.
 - The runtime stage carries a JRE and the jar alone: no sources, no Maven, no local repository, and a non-root user.
 - Tests do not run during the image build. Finding out that something is broken belongs in CI, not in packaging.
+- The JVM heap is capped at 75% of container memory. The default is 25%, chosen for machines larger than the 512MB this runs on.
+
+### Health and monitoring
+
+**Two endpoints, because one of them costs money.** *The database runs on a metered plan.*
+- The managed PostgreSQL this deploys against bills by compute hour and suspends itself after five minutes without queries. The monthly allowance is roughly an eighth of a month of continuous uptime.
+- The application host, meanwhile, sleeps after fifteen minutes without HTTP traffic and takes about a minute to wake. Keeping it awake means pinging it every few minutes.
+- Those two facts collide: a monitor polling an endpoint that queries the database would keep the database awake as well, and exhaust a month's allowance in about four days. So the endpoint the monitor calls must be incapable of reaching the database.
+
+**`GET /api/health/ping`** answers `200` with `{"status":"OK"}` and has no dependencies at all — nothing is injected into it. It is what the uptime monitor and the platform's own health check call. Caching the result would not have helped: one query per minute still prevents the database from ever suspending.
+
+**`GET /api/health`** reports the project name, version and description to anyone, and adds the real health status only to a caller presenting a valid admin token in an `X-Admin-Token` header.
+- An absent header is not a failed attempt — it is a client that did not ask for that part — so it gets `200` with a smaller body and no database query.
+- A header that is present and wrong gets `403`. Someone who tried to authenticate deserves to be told they failed; otherwise a typo in the deployed token would look like success forever.
+
+**The version comes from the build.** `app.version` and `app.description` are filled from the POM through resource filtering, so the endpoint cannot report a version the build does not have. A hand-written string would be a claim nobody maintains.
+
+**Actuator is on the classpath with its web endpoints closed.** `management.endpoints.web.exposure.include` is empty. The `HealthEndpoint` bean is used directly by the controller, and `/actuator/health` — which queries the database and would otherwise be public — does not exist as a route.
 
 ### API & Web Layer
 
@@ -129,7 +153,7 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 
 ### Authorization
 
-**A capability, not an identity.** *The system has resources and no principals.*
+**A capability, not an identity.** *For links, the system has resources and no principals.*
 - There are no accounts, so there is nothing to authenticate. Creating a link returns a 32-byte `SecureRandom` token, shown once; possession of it is the entire authorisation. The link stores only its SHA-256 digest.
 - A JWT was the obvious alternative and buys nothing here: there is no subject to put in the claims, statelessness saves no work when the link has to be loaded from the database anyway, revocation would need a blocklist — which is the state the statelessness was supposed to avoid — and expiry is actively harmful for a QR printed on a wall for two years.
 - The short code cannot be the credential. It travels in the URL and gets printed on signs. A public identifier is not a secret.
@@ -144,6 +168,12 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 - The comparison is `MessageDigest.isEqual`, constant time, so response timing does not leak how much of a guess was right.
 - A link with no stored hash denies. The guard fails closed, and deleting it turns a test red, which is how we know the deny is load-bearing rather than decorative.
 - The failing code goes to the log and not to the response body. The owner of the service can correlate it; the caller who has just proved they are not the owner of the link learns nothing. It is the one error in this API that does not publish its identifier, and the 404 and the 403 therefore look different on purpose.
+
+**One operator credential, and only one.** *The health endpoint introduced the single principal in the system.*
+- `SHORTLINK_ADMIN_TOKEN` authorises an operator, not a user. It grants no power over any link: it cannot create, edit, delete or read one. All it unlocks is the `status` field of `/api/health`.
+- It is read from the environment with no default. A deployment that does not supply it rejects every attempt rather than answering freely, and a blank header cannot match a blank configured token — a test fails if that branch is removed.
+- Rejections are indistinguishable from outside, so the response never reveals whether the deployment configured a token at all. The distinction is in the log, where the operator can see it and the caller cannot.
+- The header is `X-Admin-Token`, deliberately not the one links use. Two credentials of different natures sharing a header name is a confusion waiting to happen.
 
 **What the token does not cover.** *The redirect and the QR stay public.*
 - Scanning is the product. If the redirect ever required a header, every printed code would stop working.
@@ -270,29 +300,34 @@ Four levels, each with a different cost and purpose:
 - **Persistence is proved, not assumed:** The Testcontainers tests clear the persistence context before reading back, and assert that the instance they read is not the instance they saved. Without that, Hibernate's first-level cache would satisfy every assertion against an empty database.
 - **Constraint names, not just exception types:** The uniqueness test asserts that `uk_short_links_code` appears in the error. Asserting only `DataIntegrityViolationException` would pass for any integrity failure, including one coming from a different column.
 - **Values chosen to expose the mapping:** The logo test uses bytes containing a zero and a high byte, so a column that stopped at the first null would fail. The expiry test uses microsecond precision, matching the column, because a value carrying nanoseconds would be silently truncated on the way in.
+- **Guards are tested where they live:** The admin token verifier has its own tests, built by hand without Spring. The controller tests mock it, so they prove the controller reacts correctly to each verdict but say nothing about how the verdict is reached — a distinction that matters, because an inverted comparison inside the verifier once passed the entire controller suite.
 
 ## ⚠️ Known Limitations
 
 - **JSON on public endpoints:** Scanning a dead, invalid, or expired QR code currently returns a JSON document in the browser. While correct for an API, it provides a poor experience for a human user. Pending: an HTML fallback page for the public redirect endpoint.
 - **Problem Types are URNs:** The `type` fields in the error responses are URNs, not dereferenceable URLs. This is a conscious decision not to invent a documentation URL that does not actually exist.
+- **The public health view does not prove the service works.** Without a token, `/api/health` reports that the process is running and nothing more, and `/api/health/ping` reports even less. If the database is unreachable, both still answer `200` while every redirect fails. This is deliberate — a health check that queried the database on every anonymous call would exhaust the database's monthly compute allowance — but it means the uptime badge measures liveness, not correctness.
 - **The management GET loads the logo to answer a boolean.** `getByCode` fetches the whole entity, logo bytes included, and `hasLogo` is derived from it. A `@Basic(fetch = LAZY)` on a basic attribute does nothing without bytecode enhancement, so the blob travels on every read of a link that has one. The redirect path already avoids this with a projection; the management path would need its own.
+- **The free hosting tier sleeps.** The application host suspends the service after fifteen minutes without traffic and takes about a minute to wake, so the first request after a quiet period is slow. The database suspends after five minutes and wakes in well under a second.
 
 ## 🛠️ Tech Stack
 - **Java 21**
 - **Spring Boot 4.1**
 - **Spring Data JPA**
 - **Flyway** (schema migrations, one set for every environment)
-- **PostgreSQL** (production)
+- **PostgreSQL** (production, hosted on Neon)
 - **H2 Database** (file-based in development, in-memory in tests, both in PostgreSQL compatibility mode)
 - **Docker** (multi-stage image build)
+- **Render** (application hosting)
 - **ZXing** (`core` for encoding, `javase` for the bridge to `BufferedImage`).
 - **Testing Ecosystem:**
-  - **JUnit 5**
-  - **Testcontainers** (a real PostgreSQL for the persistence tests)
-  - **Mockito** (Mocking domain logic without database overhead)
-  - **AssertJ** (Fluent and semantic assertions)
-  - **MockMvc** (HTTP layer simulation)
-  - **Postman** (API contract validation)
+    - **JUnit 5**
+    - **Testcontainers** (a real PostgreSQL for the persistence tests)
+    - **Mockito** (Mocking domain logic without database overhead)
+    - **AssertJ** (Fluent and semantic assertions)
+    - **MockMvc** (HTTP layer simulation)
+    - **Postman** (API contract validation)
+- **GitHub Actions** (the suite runs on every pull request and on every push to `main`)
 
 ## 🚀 How to Run
 
@@ -333,6 +368,21 @@ suite.
    ```
    *Docker must be running: the persistence tests start a PostgreSQL container.*
 
+### Environment variables
+
+The `prod` profile declares no fallback values, so every one of these must be
+supplied by the deployment or the application will not start:
+
+| Variable | Purpose |
+|---|---|
+| `SPRING_PROFILES_ACTIVE` | Which environment this is. No default anywhere. |
+| `DATABASE_URL` | JDBC URL, e.g. `jdbc:postgresql://host/db?sslmode=require` |
+| `DATABASE_USERNAME` | |
+| `DATABASE_PASSWORD` | |
+| `SHORTLINK_BASE_URL` | The canonical origin that goes inside generated QR codes |
+| `SHORTLINK_ADMIN_TOKEN` | Unlocks the `status` field of `/api/health`. Without it, that field is never served. |
+| `PORT` | Assigned by the platform. Defaults to 9080 when absent. |
+
 ## 🧪 Testing the API
 
 The collection at [`docs/shortlinkQr-API.postman_collection.json`](docs/shortlinkQr-API.postman_collection.json) works as an
@@ -370,30 +420,38 @@ Last full run: 82 assertions, 82 passed.
 
 - [x] **Project setup** — Spring Boot, JPA, H2, configuration
 - [x] **Domain model and persistence**
-  - [x] `ShortLink` entity with JPA mapping
-  - [x] Repository with derived queries
-  - [x] Atomic visit counter
+    - [x] `ShortLink` entity with JPA mapping
+    - [x] Repository with derived queries
+    - [x] Atomic visit counter
 - [x] **Core business logic**
-  - [x] Base62 code generator with collision retry
-  - [x] Link creation, resolution and retargeting
-  - [x] Domain exceptions
+    - [x] Base62 code generator with collision retry
+    - [x] Link creation, resolution and retargeting
+    - [x] Domain exceptions
 - [x] **Authorization**
-  - [x] Per-link management token, issued on creation
-  - [x] Guarded mutations and management read
-  - [x] Partial updates with `PATCH`
+    - [x] Per-link management token, issued on creation
+    - [x] Guarded mutations and management read
+    - [x] Partial updates with `PATCH`
 - [x] **REST API**
-  - [x] Request/response DTOs with validation
-  - [x] Management endpoints
-  - [x] Public redirect endpoint
-  - [x] HTTP error mapping
+    - [x] Request/response DTOs with validation
+    - [x] Management endpoints
+    - [x] Public redirect endpoint
+    - [x] HTTP error mapping
 - [x] **QR code generation**
-  - [x] QR rendering
-  - [x] Logo embedding
-  - [x] Logo upload and sanitization
-- [ ] **Deployment**
-  - [x] Flyway migrations with `validate` in every profile
-  - [x] PostgreSQL profile
-  - [x] Multi-stage Dockerfile
-  - [x] Persistence tests against a real PostgreSQL
-  - [ ] CI pipeline
-  - [ ] Deployed instance
+    - [x] QR rendering
+    - [x] Logo embedding
+    - [x] Logo upload and sanitization
+- [x] **Deployment**
+    - [x] Flyway migrations with `validate` in every profile
+    - [x] PostgreSQL profile
+    - [x] Multi-stage Dockerfile
+    - [x] Persistence tests against a real PostgreSQL
+    - [x] CI pipeline
+    - [x] Health endpoint with an operator-authenticated view
+    - [x] Deployed and reachable
+
+### Next
+
+- `DELETE /api/links/{code}` and `DELETE /api/links/{code}/logo`
+- Management token rotation
+- A projection for the management read, so a boolean does not cost a blob
+- An HTML fallback for the public redirect
