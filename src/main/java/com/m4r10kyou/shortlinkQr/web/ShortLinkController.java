@@ -14,7 +14,6 @@ import com.m4r10kyou.shortlinkQr.validation.LogoUploadValidator;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.CacheControl;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,11 +24,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.net.URI;
 import java.time.Duration;
 
 @RestController
@@ -67,14 +66,17 @@ public class ShortLinkController {
     }
 
     @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public ShortLinkCreationResponse createShortLink(@Valid @RequestBody ShortLinkRequest request){
+    public ResponseEntity<ShortLinkCreationResponse> createShortLink(@Valid @RequestBody ShortLinkRequest request){
 
         CreatedShortLink createdShortLink = shortLinkService.createLink(request.targetUrl(), request.customAlias(), request.expiresAt());
 
-        return ShortLinkCreationResponse.from(createdShortLink.shortLink(), baseUrl, createdShortLink.rawToken() )  ;
-    }
+        ShortLinkCreationResponse bodyResponse = ShortLinkCreationResponse.from(createdShortLink.shortLink(), baseUrl, createdShortLink.rawToken() );
 
+        return  ResponseEntity
+                .created(URI.create(bodyResponse.shortUrl()))
+                .cacheControl(CacheControl.noStore())
+                .body(bodyResponse);
+    }
 
     @PatchMapping("/{code}")
     public ShortLinkResponse editShortLink(@PathVariable("code") String code,
