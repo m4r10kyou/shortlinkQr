@@ -14,31 +14,62 @@ class ActiveProfileGuardTests {
     @Test
     void postProcessBeanFactory_withNoActiveProfile_throwsIllegalStateException() {
 
-        Environment environment = mock(Environment.class);
-        ConfigurableListableBeanFactory beanFactory = mock(ConfigurableListableBeanFactory.class);
+        var setup = stubEnvironmentAndProfile();
 
-        when(environment.getActiveProfiles()).thenReturn(new String[0]);
-
-        ActiveProfileGuard guard = new ActiveProfileGuard();
-        guard.setEnvironment(environment);
-
-        assertThatThrownBy(() -> guard.postProcessBeanFactory(beanFactory))
+        assertThatThrownBy(() -> setup.guard().postProcessBeanFactory(setup.beanFactory()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("SPRING_PROFILES_ACTIVE");
     }
 
     @Test
-    void postProcessBeanFactory_withActiveProfileTest_desNotThrowAnyException() {
+    void postProcessBeanFactory_withActiveProfileTest_doesNotThrowAnyException() {
+
+        var setup = stubEnvironmentAndProfile("test");
+
+        assertThatCode(() ->setup.guard().postProcessBeanFactory(setup.beanFactory())).doesNotThrowAnyException();
+
+    }
+
+    @Test
+    void postProcessBeanFactory_withActiveProfileProd_doesNotThrowAnyException(){
+
+        var setup = stubEnvironmentAndProfile("prod");
+
+        assertThatCode(() ->setup.guard().postProcessBeanFactory(setup.beanFactory())).doesNotThrowAnyException();
+    }
+
+    @Test
+    void postProcessBeanFactory_withActiveProfileMisspellingProd_throwsIllegalStateException(){
+
+        var setup = stubEnvironmentAndProfile("prd");
+
+        assertThatThrownBy(() -> setup.guard().postProcessBeanFactory(setup.beanFactory()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("prd");
+    }
+
+    @Test
+    void postProcessBeanFactory_withAnUnknownProfileAmongValidOnes_throwsIllegalStateException(){
+
+        var setup = stubEnvironmentAndProfile("prd","prod");
+
+        assertThatThrownBy(() -> setup.guard().postProcessBeanFactory(setup.beanFactory()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("prd");
+    }
+
+    private GuardSetup stubEnvironmentAndProfile(String... activeProfiles) {
 
         Environment environment = mock(Environment.class);
         ConfigurableListableBeanFactory beanFactory = mock(ConfigurableListableBeanFactory.class);
 
-        when(environment.getActiveProfiles()).thenReturn(new String[]{"test"});
+        when(environment.getActiveProfiles()).thenReturn(activeProfiles);
 
         ActiveProfileGuard guard = new ActiveProfileGuard();
         guard.setEnvironment(environment);
 
-        assertThatCode(() ->guard.postProcessBeanFactory(beanFactory)).doesNotThrowAnyException();
-
+        return new GuardSetup(guard, beanFactory);
     }
+
+    private record GuardSetup(ActiveProfileGuard guard, ConfigurableListableBeanFactory beanFactory) {}
 }
