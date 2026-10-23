@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM eclipse-temurin:21-jdk-alpine AS build
+FROM eclipse-temurin:24-jdk-alpine AS build
 WORKDIR /build
 
 COPY .mvn/ .mvn/
@@ -10,7 +10,7 @@ RUN ./mvnw dependency:go-offline -B
 COPY src/ src/
 RUN ./mvnw clean package -DskipTests -B
 
-FROM eclipse-temurin:21-jre-alpine AS runtime
+FROM eclipse-temurin:24-jre-alpine AS runtime
 WORKDIR /app
 
 RUN addgroup -S spring && adduser -S spring -G spring
