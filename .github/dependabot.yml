@@ -34,4 +34,8 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "build"
+    ignore:
+      # Non-LTS Java lines. 21 and 25 are LTS, 29 is the next one.
+      - dependency-name: "eclipse-temurin"
+        versions: ["22", "23", "24"]
       
