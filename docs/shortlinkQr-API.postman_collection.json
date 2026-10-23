@@ -1,8 +1,8 @@
 {
   "info": {
-    "_postman_id": "7c8ca14b-1933-4559-a5bc-12f87ef77306",
+    "_postman_id": "1dcf9ffa-4f03-4cb5-9620-7d1eb889f01f",
     "name": "shortlinkQr-API",
-    "description": "Functional test collection for the shortlinkQr API.\n\nThe collection is organised in six folders:\n\n1. Links API - the happy paths of the management endpoints.\n2. Validation - requests that must be rejected by Bean Validation with 400 and a per-field `errors` map.\n3. Protocol errors - malformed or unsupported requests handled by ResponseEntityExceptionHandler.\n4. Redirect - the public endpoint a scanned QR code hits.\n5. QR & Logo - the endpoint for check add image to a previous QR.\n6. Authorization & edition - managing the link via PATCH and asserting token validation.\n\nEvery request carries a test script asserting the expected status, so the whole collection can be executed with the Collection Runner and read as a pass/fail report.\n\nVariables:\n- baseUrl: host of the running application (default http://localhost:9080)\n- lastCode: filled automatically by the first request, so later requests need no manual copying.\n- aliasCode: the custom alias used to exercise the conflict case.\n- managementToken: captured token to authenticate edit and inspection endpoints.\n- plainQrSize: stored size of the unbranded QR code.",
+    "description": "Functional test collection for the shortlinkQr API.\n\nThe collection is organised in seven folders:\n\n1. Links API - the happy paths of the management endpoints.\n    \n2. Validation - requests that must be rejected by Bean Validation with 400 and a per-field `errors` map.\n    \n3. Protocol errors - malformed or unsupported requests handled by ResponseEntityExceptionHandler.\n    \n4. Redirect - the public endpoint a scanned QR code hits.\n    \n5. QR & Logo - the QR endpoint and the logo upload that feeds it.\n    \n6. Authorization & edition - managing the link via PATCH and asserting token validation.\n    \n7. Health - the two health endpoints, and the boundary of the operator token.\n    \n\nEvery request carries a test script asserting the expected status, so the whole collection can be executed with the Collection Runner and read as a pass/fail report.\n\nVariables:\n\n- baseUrl: host of the running application (default [http://localhost:9080](http://localhost:9080))\n    \n- lastCode: filled automatically by the first request, so later requests need no manual copying.\n    \n- aliasCode: the custom alias used to exercise the conflict case.\n    \n- managementToken: captured token to authenticate edit and inspection endpoints.\n    \n- wrongToken: a syntactically plausible token that was never issued, for the 403 paths.\n    \n- plainQrSize: stored size of the unbranded QR code.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "1343267"
   },
@@ -1181,10 +1181,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('404 Not Found', () => pm.response.to.have.status(404));",
-                  "pm.test('problem type identifies the failure', () => {",
-                  "    pm.expect(pm.response.json().type).to.eql('urn:problem-type:not-found');",
-                  "});"
+                  "pm.test('404 Not Found', () => pm.response.to.have.status(404));\npm.test('problem type identifies the failure', () => {\n    pm.expect(pm.response.json().type).to.eql('urn:problem-type:not-found');\n});"
                 ]
               }
             }
@@ -1219,7 +1216,7 @@
                 "logo"
               ]
             },
-            "description": "The image is valid and gets sanitised before anything looks the code up, because sanitising happens outside the transaction. The 404 therefore arrives after the work, not before - a deliberate trade documented in the README."
+            "description": "The code does not exist, so authorisation fails before the file is ever read: validate, authorise, then sanitise. An earlier version decoded the image first and answered the 404 afterwards, which is what this description used to claim.\n\n404 and not 403: there is no link, so there is no capability to compare the token against."
           },
           "response": []
         }
@@ -1699,6 +1696,108 @@
         }
       ],
       "description": "Managing the link via PATCH and asserting token validation. Placed last as the PATCH mutates the previously asserted lastCode link."
+    },
+    {
+      "name": "7. Health",
+      "item": [
+        {
+          "name": "39 - Ping",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));\npm.test(\"reports OK\", () => pm.expect(pm.response.json().status).to.eql(\"OK\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health/ping",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health",
+                "ping"
+              ]
+            },
+            "description": "The endpoint the uptime monitor and the platform's health check call.\n\nNothing is injected into the controller method, so it cannot reach the  \ndatabase however often it is polled. Caching the response would have  \nbought nothing: one query per minute is already enough to stop the  \ndatabase from ever suspending, so the fix had to be an endpoint with no  \ndependencies rather than a cheaper trip to the same place."
+          },
+          "response": []
+        },
+        {
+          "name": "40 - Health without a token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));  \n\nconst body = pm.response.json();\n\npm.test(\"identifies the service\", () => \n        {\n            pm.expect(body.project).to.be.a(\"string\").and.not.empty;\n            pm.expect(body.version).to.be.a(\"string\").and.not.empty;\n        });\n\npm.test(\"withholds the status field\", () =>\n        {   \n            pm.expect(body).to.not.have.property(\"status\"); \n        });        "
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            },
+            "description": "An absent header is not a failed authentication — it is a client that did  \nnot ask for the privileged part — so the answer is 200 with a smaller body  \nand no database query.\n\nAsserts both halves of that contract: the service identifies itself  \n(`project`, `version`, `description`, filled from the POM through resource  \nfiltering so the endpoint cannot report a version the build does not have),  \nand `status` is absent. The second assertion is the one that matters. If  \n`status` ever appeared here, the public endpoint would be querying the  \ndatabase on every anonymous call, which is the exact cost this design  \nexists to avoid."
+          },
+          "response": []
+        },
+        {
+          "name": "41 - Health with a wrong token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"403 Forbidden\", () => pm.response.to.have.status(403));\n\nconst body = pm.response.json();\n\npm.test(\"answers with a problem document, not the health view\", () => {\n    pm.expect(body.status).to.eql(403);\n    pm.expect(body).to.not.have.property(\"project\");\n    pm.expect(body).to.not.have.property(\"version\");\n});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{wrongToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            },
+            "description": "A header that is present and wrong gets 403, not a quiet 200.\n\nSomeone who tried to authenticate deserves to be told they failed;  \notherwise a typo in the deployed token would look like success forever and  \nnobody would notice until the status field was needed. The response body  \ncarries no `status`, and the comparison inside the verifier is constant  \ntime over hashes of equal length, so neither the body nor the timing says  \nhow close the guess was.\n\nA blank header does not pass either, even against a deployment that  \nconfigured no token at all — two empty strings would otherwise hash equal  \nand authorise. A test fails if that branch is removed."
+          },
+          "response": []
+        }
+      ],
+      "description": "Two endpoints, because one of them costs money.\n\nThe managed PostgreSQL this deploys against bills by compute hour and  \nsuspends itself after five minutes without queries; the application host  \nsleeps after fifteen minutes without HTTP traffic. Keeping the host awake  \nmeans pinging it every few minutes, and a monitor polling an endpoint that  \ntouched the database would keep the database awake too and exhaust a  \nmonth's allowance in about four days. So the endpoint the monitor calls is  \nincapable of reaching the database.\n\nThe authorised view is not covered here. It needs a valid  \n`SHORTLINK_ADMIN_TOKEN`, and a real one cannot live in a versioned  \ncollection — an empty variable would simply fail for anyone who clones the  \nrepository. What is asserted instead is the boundary: that the field stays  \nwithheld without a token, and that a wrong token is told it is wrong."
     }
   ],
   "variable": [

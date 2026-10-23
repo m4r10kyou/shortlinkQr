@@ -86,10 +86,11 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 
 ### Deployment
 
-**Three profiles, and no default.** *The application refuses to start without being told where it is running.*
-- `dev` is H2 in a file, `test` is H2 in memory, `prod` is PostgreSQL. The shared `application.properties` holds only what every environment agrees on.
-- Nothing is active by default, so a deployment that forgets to name its profile fails at startup instead of quietly running against the wrong database.
-- The `prod` profile reads its connection details from environment variables with no fallback values. A missing variable is a boot failure, not a silent connection to something else.
+**Four profiles, and no default.** *The application refuses to start without being told where it is running.*
+- `dev` is H2 in a file, `test` is H2 in memory, `integration` deliberately supplies no datasource so Testcontainers can provide one, and `prod` is PostgreSQL. The shared `application.properties` holds only what every environment agrees on.
+- Nothing is active by default, and a `BeanFactoryPostProcessor` rejects both an empty profile list and a name that is not one of the four. It has to run that early: as an ordinary `@Component` the guard was constructed in the middle of context refresh, by which time Flyway had already migrated a database Boot had invented — with no `spring.datasource.url` and an embedded driver on the classpath, Boot creates an anonymous in-memory H2 rather than failing. "No default profile" did not mean "will not start" until the check moved ahead of every singleton.
+- A misspelling is rejected too, not only an absent profile. `prod,prd` passed the first version of the guard, which complained only when *every* name was unknown.
+- The `prod` profile reads its connection details from environment variables with no fallback values, so a missing variable is a boot failure rather than a silent connection to something else. Not a loud one, though: `spring.datasource.*` binds through the `Binder`, which ignores an unresolvable placeholder and leaves the literal `${DATABASE_URL}` in the property, so the message is `'url' must start with "jdbc"` and never names the variable. A `@Value` would have thrown a `PlaceholderResolutionException` that did, because it resolves placeholders through a different mechanism.
 
 **The application does not know who hosts it.** *Everything environment-specific arrives as a variable.*
 - The database, the base URL and the admin token all come from the environment. Moving from one provider to another is a matter of changing values, not code — which is exactly what happened when the first choice of host turned out to cost $38/month for a database that will hold a few dozen rows.
@@ -273,7 +274,8 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 **Sanitising happens outside the transaction.** *Decoding an image is CPU work and has no business holding a database connection.*
 - The controller validates and sanitises; the service method's `@Transactional` covers only loading the link and attaching the bytes.
 - The other way round would hold a pooled connection for the whole decode and re-encode. Under concurrent uploads the pool empties while the database itself sits idle — the kind of incident where an hour goes into looking at the wrong machine.
-- The cost is that a request for a code that does not exist is rejected after the image has been processed rather than before: a worse ordering of error messages in exchange for a better failure mode under load.
+- The ordering is validate, authorise, then sanitise: an unknown code or a bad token is rejected before the file is ever copied into the heap, let alone decoded. An earlier version decoded first and answered the 404 afterwards, which is what this bullet used to describe.
+- What the split does cost is a second read. The controller's authorisation loads the link, and `attachLogo` loads and authorises it again inside the transaction. That is the price of the paragraph above: duplicated work in exchange for a service method that stays correct wherever it is called from.
 
 ### Testing
 
@@ -293,7 +295,7 @@ Four levels, each with a different cost and purpose:
 - **Strict HTTP assertions:** The redirect test asserts `302 Found`, not a generic `3xx`. A `301` would ruin the retargeting promise, so the test must be as strict as the business rule.
 - **Documented regressions:** Tests for specific bugs (e.g., URLs with spaces) include their origin story in the code. Without this context, future developers might delete them thinking they are redundant.
 - **Isolated configuration:** `@WebMvcTest` explicitly pins the `shortlink.base-url` property. Tests must control their own inputs and not fail simply because a production configuration file was modified.
-- **Unified assertion style:** AssertJ is used exclusively across the suite to maintain semantic readability and avoid mixing assertion libraries.
+- **One assertion style, with one exception:** AssertJ across the suite, for semantic readability and to avoid mixing libraries. Two assertions in `ShortLinkControllerTest` use Hamcrest's `containsString` inside `header().string(...)`, checking the QR endpoint's `max-age=300` without pinning the rest of the header. That is the matcher API MockMvc offers for a header, and going around it would mean pulling the response apart by hand to say something less clear. Stating the rule with its exception beats stating it absolutely and being wrong.
 - **Database integrity:** Failure-path tests also explicitly verify that no visit is recorded.
 - **Round-trip testing:** *Generate, decode, and compare with the original URL.* This is the only assertion that proves the image can actually be scanned. It is also the instrument used to measure how far the logo can grow.
 - **Decoding without the detector:** Round-trip tests decode with `PURE_BARCODE`. Without that hint ZXing locates the finder patterns and resamples through a perspective transform, and for some module patterns a sample point lands on a module boundary: one code in ten failed to decode from a perfectly generated PNG. The pre-existing round-trip test was green only because its URL happened to fall on the right side of that.
@@ -321,7 +323,7 @@ Four levels, each with a different cost and purpose:
 - **Render** (application hosting)
 - **ZXing** (`core` for encoding, `javase` for the bridge to `BufferedImage`).
 - **Testing Ecosystem:**
-    - **JUnit 5**
+    - **JUnit 6** (managed by `spring-boot-dependencies` 4.1.1, not chosen explicitly)
     - **Testcontainers** (a real PostgreSQL for the persistence tests)
     - **Mockito** (Mocking domain logic without database overhead)
     - **AssertJ** (Fluent and semantic assertions)
@@ -394,7 +396,7 @@ Four requests upload a file from `docs/`, referenced relatively, so set
 Postman's working directory (Settings → General) to the repository root before
 running the collection.
 
-Thirty-eight requests across six folders:
+Forty-one requests across seven folders:
 
 - **Links API** — creation and retrieval, including the alias conflict. The
   generated code and the management token are captured into variables, so later
@@ -409,12 +411,19 @@ Thirty-eight requests across six folders:
 - **QR & Logo** — the QR endpoint before and after an upload, asserting that the
   branded symbol comes back as a different, larger image; plus a rejected file
   and an unknown code.
-- **Authorization & edition** — the `PATCH` in its four shapes, the two
-  contradictory ones rejected at the boundary, and 403 for a missing and a wrong
-  token on all three guarded endpoints. One request fetches the QR without a
+- **Authorization & edition** — the `PATCH` in its three valid shapes, plus the
+  empty body and the contradictory one, both rejected at the boundary; 403 for a
+  missing token and for a wrong one on the `PATCH`, and for a wrong one on the
+  management read and the logo upload. One request fetches the QR without a
   header and asserts the 200: the symbol has to stay public.
+- **Health** — `/api/health/ping`, and `/api/health` both without a header and
+  with a wrong one. The authorised view is not here: a valid
+  `SHORTLINK_ADMIN_TOKEN` cannot live in a versioned collection, and an empty
+  variable would fail for anyone who clones the repository.
 
-Last full run: 82 assertions, 82 passed.
+Last full run against an empty database: 41 requests, 91 assertions, 91 passed.
+Two of those assertions live inside a conditional in request 02 and only run
+the first time, when the custom alias is still free; a second pass reports 89.
 
 ## 📋 Project Status
 
