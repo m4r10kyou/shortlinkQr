@@ -23,3 +23,15 @@ updates:
     commit-message:
       prefix: "build"
       include: "scope"
+      
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build"
+      
