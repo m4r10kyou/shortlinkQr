@@ -12,13 +12,13 @@ public class AdminTokenVerifier {
 
 
     private final ManagementTokenGenerator managementTokenGenerator;
-    private final String token;
+    private final String adminTokenHash;
 
     public AdminTokenVerifier(@Value("${shortlink.admin-token}") String token ,
                               ManagementTokenGenerator managementTokenGenerator) {
 
-        this.token = token;
         this.managementTokenGenerator = managementTokenGenerator;
+        this.adminTokenHash = managementTokenGenerator.hash(token);
     }
 
     // Also closes an unconfigured server: without this branch a blank header
@@ -34,7 +34,7 @@ public class AdminTokenVerifier {
         }
 
         byte[] hashTokenProvidedBytes = managementTokenGenerator.hash(rawToken).getBytes(StandardCharsets.UTF_8);
-        byte[] hashTokenAdminBytes    = managementTokenGenerator.hash(token).getBytes(StandardCharsets.UTF_8);
+        byte[] hashTokenAdminBytes    = adminTokenHash.getBytes(StandardCharsets.UTF_8);
 
         if(!MessageDigest.isEqual(hashTokenProvidedBytes, hashTokenAdminBytes)){
 
