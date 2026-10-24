@@ -125,7 +125,7 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 
 **Actuator listens on its own port, not on the public one.** *An endpoint that queries the database should not share the route every printed QR hits.*
 - `management.server.port=9091` moves every Actuator endpoint off the application port. It lives in the shared configuration, so it applies to every profile, including local runs. On Render, a web service receives public traffic on `$PORT` only ([port binding](https://render.com/docs/web-services#port-binding)), so the management port stays off the public route there; any other host needs the same check before the isolation is trusted.
-- After deploying, `/actuator/health` should answer `UP` on the management port and `404` on the public one. The `HealthEndpoint` bean is still used directly by the controller, unchanged.
+- Verified against production on 24 October 2026: `/actuator` and `/actuator/health` both answer `404` on the public domain, while `/api/health/ping` still answers `{"status":"OK"}`. The `HealthEndpoint` bean is still used directly by the controller, unchanged.
 - Two tests pin the separation. `ActuatorSeparationTests` proves Spring serves Actuator on the management port and not on the public one when the property is in place; `ManagementPortConfigurationTests` loads the committed configuration through Spring Boot's own config loader and fails if `management.server.port` is deleted, misspelled or set to collide with `server.port` in the scenarios it checks.
 
 ### API & Web Layer

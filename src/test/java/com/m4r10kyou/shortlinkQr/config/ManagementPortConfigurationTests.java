@@ -22,9 +22,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * environment, replaced by a test-scoped source.
  *
  * Scenarios: PORT unset (local default branch of server.port=${PORT:9080}) and
- * PORT=10000, an arbitrary stand-in for "the platform assigns some port".
- * It asserts nothing about the port of any actual deployment, which the hosting
- * platform assigns at runtime and no committed test can observe.
+ * PORT=10000, the port Render assigns, read from the deploy log on 24 October
+ * 2026. It asserts nothing about the port of any future deployment, which the
+ * hosting platform is free to change.
  */
 class ManagementPortConfigurationTests {
 
