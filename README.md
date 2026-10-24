@@ -123,7 +123,10 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 
 **The version comes from the build.** `app.version` and `app.description` are filled from the POM through resource filtering, so the endpoint cannot report a version the build does not have. A hand-written string would be a claim nobody maintains.
 
-**Actuator is on the classpath with its web endpoints closed.** `management.endpoints.web.exposure.include` is empty. The `HealthEndpoint` bean is used directly by the controller, and `/actuator/health` — which queries the database and would otherwise be public — does not exist as a route.
+**Actuator listens on its own port, not on the public one.** *An endpoint that queries the database should not share the route every printed QR hits.*
+- `management.server.port=9091` moves every Actuator endpoint off the application port. It lives in the shared configuration, so it applies to every profile, including local runs. On Render, a web service receives public traffic on `$PORT` only ([port binding](https://render.com/docs/web-services#port-binding)), so the management port stays off the public route there; any other host needs the same check before the isolation is trusted.
+- After deploying, `/actuator/health` should answer `UP` on the management port and `404` on the public one. The `HealthEndpoint` bean is still used directly by the controller, unchanged.
+- Two tests pin the separation. `ActuatorSeparationTests` proves Spring serves Actuator on the management port and not on the public one when the property is in place; `ManagementPortConfigurationTests` loads the committed configuration through Spring Boot's own config loader and fails if `management.server.port` is deleted, misspelled or set to collide with `server.port` in the scenarios it checks.
 
 ### API & Web Layer
 
@@ -279,11 +282,12 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 
 ### Testing
 
-Four levels, each with a different cost and purpose:
+Five levels, each with a different cost and purpose:
 - **Testcontainers** — a real PostgreSQL in Docker, for the migration, the column types and the constraints.
 - **`@DataJpaTest`** — in-memory database, for the repository's derived queries.
 - **Mockito** — no database, for the service's own decisions.
 - **MockMvc** — simulated HTTP requests for the web layer.
+- **Real HTTP** — a started server on a random port, for the few things a mocked request cannot show: that two listeners exist and that one of them does not serve a route.
 
 **`method_condition_result` naming.** *A failing build should name the method that broke.*
 - Most test classes cover several operations — `existsByCode`, `findByCode` and `registerVisitCount` share one class — so the method under test comes first.
@@ -354,6 +358,7 @@ suite.
    ```text
    http://localhost:9080
    ```
+   *(Actuator listens separately on `http://localhost:9091`, not on 9080.)*
 4. Database Access:
 
    *You can inspect the local database using the H2 Console at:*
