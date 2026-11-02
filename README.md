@@ -190,6 +190,37 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 **The token cannot be recovered or rotated.** *Only the digest is stored.*
 - Lose it and the link is read-only for good. Rotation would be a new endpoint authorised by the very token being rotated: a reasonable next feature, not this one.
 
+### Rate limiting
+
+**Anonymous creation needed a limit.** *The landing page invites strangers to try it with curl.*
+- `POST /api/links` asks for nothing, and every creation writes a row to a database that bills by compute hour and wakes on any query. Unlimited anonymous writes against a metered database is the one finding four independent reviews all put first.
+- The redirect is deliberately not limited. A printed QR that starts answering `429` is the product broken.
+
+**A `HandlerInterceptor`, not a `Filter`.** *So the 429 looks like every other error here.*
+- A filter runs before the `DispatcherServlet`, where `@RestControllerAdvice` cannot see what it throws: the response would have to be written by hand, and this would be the only error in the API without an RFC 7807 body and a `type`.
+- An interceptor runs inside the dispatch, so the exception reaches the advice and the 429 is built by the same code path as the 409 and the 403. That the advice actually sees an exception thrown from `preHandle` was an assumption until a test asserted it end to end.
+
+**A fixed window per IP, and the cache expiry is the window.** *One mechanism, not two.*
+- `Caffeine.get(key, mapping)` writes only when the key is absent, and incrementing the counter afterwards does not renew the entry. So an entry expires exactly `window-seconds` after the first request of that window, and nothing has to track a start timestamp.
+- The consequence is written in the class, because it is not obvious: anyone who tunes `expireAfterWrite` to save memory would be changing the rate limit without intending to.
+- The counter advances in `preHandle`, before validation. A malformed body still spends quota, which is the point: otherwise an attacker sends garbage for free and never reaches the limit.
+
+**The bound on tracked IPs is measured, not guessed.** *A map keyed by IP grows with every visitor.*
+- A disabled experiment, `RateLimitMemoryExperiment`, fills a million entries and divides: 156 bytes each, over twelve passes with two bytes of spread. Keys are realistic — 14 characters for IPv4, 39 for IPv6 — measured separately with the larger kept.
+- At 100,000 entries that is 16 MB of a 384 MB heap, under 5%. The garbage collector would not have helped here: entries in a live cache are strongly reachable and are not garbage, so the bound has to be explicit.
+- What the bound costs: an attack from more distinct IPs than the maximum evicts entries, and those attackers regain quota. The limit degrades exactly when it is most needed. That trade is deliberate — a process that stays up and limits imperfectly is worth more than one that enforces perfectly until it dies — and the threshold is far outside anything this service will see.
+
+**`Retry-After` carries the whole window, not the time remaining.** *An upper bound is the honest answer.*
+- The window start lives inside Caffeine's entry and is not observable from outside, so the exact remaining time cannot be computed. The full window is always true: by then the quota is free. The cost is a client occasionally waiting longer than it needed to.
+
+**The client is whoever Tomcat says it is.** *`X-Forwarded-For` is written by the caller.*
+- Taking the first element of that header is the obvious implementation and the wrong one: anyone can send a different value on every request and have an unlimited quota, leaving a rate limit that exists only in the README.
+- So nothing here parses it. `server.forward-headers-strategy=NATIVE` puts Tomcat's `RemoteIpValve` in front, which honours the header only when the immediate peer is a private-range proxy, and `getRemoteAddr()` returns the real client. The application code knows nothing about proxies.
+
+**Not covered.** *Stated rather than implied.*
+- `GET /api/links/{code}/qr` runs a ZXing encode on every call and the logo upload decodes an image; neither is limited yet.
+- Which address the hosting platform actually delivers is a deployment fact no test can assert. The limit ships at 100 a minute so that a wrong answer there is invisible rather than an outage.
+
 ### Partial updates
 
 **`PATCH`, not `PUT`.** *Updates are partial by nature.*
@@ -429,6 +460,13 @@ Forty-one requests across seven folders:
 Last full run against an empty database: 41 requests, 91 assertions, 91 passed.
 Two of those assertions live inside a conditional in request 02 and only run
 the first time, when the custom alias is still free; a second pass reports 89.
+
+The rate limit is not exercised here. Triggering it would take more
+requests than the limit allows in a minute, and lowering the limit for
+the run would mean the collection only passes against a configuration
+this README does not describe. It is covered by `RateLimitEndpointTest`,
+which pins the limit at two and asserts the 429, its `type` and its
+`Retry-After` header.
 
 ## 📋 Project Status
 

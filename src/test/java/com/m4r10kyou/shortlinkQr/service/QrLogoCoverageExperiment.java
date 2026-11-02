@@ -33,7 +33,7 @@ class QrLogoCoverageExperiment {
         );
 
         System.out.println("=== QR Logo Coverage Experiment ===");
-        System.out.println("% Ancho | % Área Aprox | Éxitos (sobre " + sampleCodes.size() + ") | Fallos");
+        System.out.println("% Width | % Approx. Area | Succeses (over " + sampleCodes.size() + ") | Fails");
         System.out.println("----------------------------------------------------------------------");
 
         Map<DecodeHintType, Object> hints = new EnumMap<>(DecodeHintType.class);

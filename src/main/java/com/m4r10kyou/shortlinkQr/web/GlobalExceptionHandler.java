@@ -4,6 +4,7 @@ import com.m4r10kyou.shortlinkQr.exception.AliasAlreadyExistsException;
 import com.m4r10kyou.shortlinkQr.exception.InvalidAdminTokenException;
 import com.m4r10kyou.shortlinkQr.exception.InvalidLogoException;
 import com.m4r10kyou.shortlinkQr.exception.InvalidTokenException;
+import com.m4r10kyou.shortlinkQr.exception.RateLimitExceededException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkExpiredException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkNotFoundException;
 import org.slf4j.Logger;
@@ -62,6 +63,25 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         problem.setProperty("alias", ex.getAlias());
 
         return problem;
+    }
+
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ProblemDetail> handleRateLimitExceeded(RateLimitExceededException ex){
+
+        log.debug("Rate limit ip exceeding: {}", ex.getMessage());
+
+        long retryAfterSeconds = ex.getRetryAfterSeconds();
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.TOO_MANY_REQUESTS,
+                ex.getMessage()
+        );
+        problem.setTitle("Rate Limit Exceeded");
+        problem.setType(URI.create("urn:problem-type:rate-limit-exceeded"));
+
+        return ResponseEntity.status(problem.getStatus())
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfterSeconds))
+                .body(problem);
     }
 
     @ExceptionHandler(ShortLinkExpiredException.class)
