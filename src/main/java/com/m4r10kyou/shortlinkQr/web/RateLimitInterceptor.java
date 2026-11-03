@@ -64,6 +64,12 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
         AtomicInteger requestCount = cache.get(clientIp, key -> new AtomicInteger(0));
 
+        String forwarderFor = request.getHeader("X-Forwarded-For");
+        String connectingIp = request.getHeader("CF-Connecting-IP");
+        String remoteAddr = request.getRemoteAddr();
+
+        log.warn("X-Forwarded-For ->'{}' CF-Connecting-IP -> '{}' RemoteAddr -> '{}'",forwarderFor,connectingIp,remoteAddr);
+
         if (requestCount.incrementAndGet() > limit) {
 
             log.warn("Rejected ip {} for exceeding the rate limit", clientIp);
