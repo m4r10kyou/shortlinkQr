@@ -213,13 +213,16 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 **`Retry-After` carries the whole window, not the time remaining.** *An upper bound is the honest answer.*
 - The window start lives inside Caffeine's entry and is not observable from outside, so the exact remaining time cannot be computed. The full window is always true: by then the quota is free. The cost is a client occasionally waiting longer than it needed to.
 
-**The client is whoever Tomcat says it is.** *`X-Forwarded-For` is written by the caller.*
-- Taking the first element of that header is the obvious implementation and the wrong one: anyone can send a different value on every request and have an unlimited quota, leaving a rate limit that exists only in the README.
-- So nothing here parses it. `server.forward-headers-strategy=NATIVE` puts Tomcat's `RemoteIpValve` in front, which honours the header only when the immediate peer is a private-range proxy, and `getRemoteAddr()` returns the real client. The application code knows nothing about proxies.
+**The client is whoever Cloudflare says it is.** *`getRemoteAddr()` is an edge node, and the edge changes.*
+- Render serves through Cloudflare, so the peer address is whichever edge took the request. Four distinct ones appeared within a second and a half in one test: keying on it meant a counter per edge, and an effective limit several times the configured one, varying with how the traffic was routed.
+- `server.forward-headers-strategy=NATIVE` did not fix it. Tomcat's `RemoteIpValve` honours `X-Forwarded-For` only when the immediate peer sits in a private range, and Cloudflare's addresses are public, so it declined to trust them. Correct behaviour, wrong assumption on our side; the property is gone rather than left in place looking like a defence.
+- The client arrives in `CF-Connecting-IP`, confirmed by logging all three values in production: both forwarded headers carried the same public address across sixteen requests while the peer changed four times. `X-Forwarded-For` holds a single element rather than a chain, so Cloudflare sets it rather than appending to it.
+- Reading that header is only safe while nothing can reach the origin without passing through Cloudflare, and every request observed arrived from a Cloudflare address. Stated as the condition it is: if the service were ever reachable directly, the header would be forgeable and the limit would be decorative.
+- The fallback when the header is absent is `getRemoteAddr()`, which degrades to counting per edge rather than to something a caller can forge, and it logs. Falling back to the first element of `X-Forwarded-For` would have been the trap this whole section exists to avoid.
 
 **Not covered.** *Stated rather than implied.*
 - `GET /api/links/{code}/qr` runs a ZXing encode on every call and the logo upload decodes an image; neither is limited yet.
-- Which address the hosting platform actually delivers is a deployment fact no test can assert. The limit ships at 100 a minute so that a wrong answer there is invisible rather than an outage.
+- The counters live in the process. A restart or a redeploy resets every window, and a second instance would count separately. For one container on a free tier that is a non-issue; it stops being one the day this scales horizontally, and the fix then is shared state, not a bigger map.
 
 ### Partial updates
 

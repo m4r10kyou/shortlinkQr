@@ -15,8 +15,12 @@ import org.springframework.web.servlet.HandlerInterceptor;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.springframework.util.StringUtils.hasText;
+
 @Component
 public class RateLimitInterceptor implements HandlerInterceptor {
+
+    private final static String CONNECTING_IP = "CF-Connecting-IP";
 
     private final int limit;
     private final Cache<String, AtomicInteger> cache;
@@ -51,7 +55,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             @NonNull HttpServletRequest request,
             @NonNull HttpServletResponse response,
             @NonNull Object handler
-    ) throws Exception {
+    ){
 
         // 1. Fast and cheap scope check.
         // We only limit link creation.
@@ -59,16 +63,10 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        // 2. Extract the IP, delegating proxy resolution to Spring (server.forward-headers-strategy)
-        String clientIp = request.getRemoteAddr();
+        // 2. Extract the IP
+        String clientIp = resolveClientIp(request);
 
         AtomicInteger requestCount = cache.get(clientIp, key -> new AtomicInteger(0));
-
-        String forwarderFor = request.getHeader("X-Forwarded-For");
-        String connectingIp = request.getHeader("CF-Connecting-IP");
-        String remoteAddr = request.getRemoteAddr();
-
-        log.warn("X-Forwarded-For ->'{}' CF-Connecting-IP -> '{}' RemoteAddr -> '{}'",forwarderFor,connectingIp,remoteAddr);
 
         if (requestCount.incrementAndGet() > limit) {
 
@@ -78,6 +76,22 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         }
 
         return true;
+    }
 
+    private String resolveClientIp(HttpServletRequest request) {
+
+        String clientIp;
+        String connIp = request.getHeader(CONNECTING_IP);
+
+        if (hasText(connIp)) {
+
+            clientIp = connIp;
+        } else {
+
+            clientIp = request.getRemoteAddr();
+            log.warn("Header '{}' absent, rate limiting by peer address {} instead", CONNECTING_IP, clientIp);
+        }
+
+        return clientIp;
     }
 }
