@@ -78,15 +78,30 @@ public class ShortLinkService {
     @Transactional
     public String resolveCode(String code) {
 
+        RedirectTarget target = findTargetByCode(code);
+
+        shortLinkRepository.registerVisitCount(code);
+
+        return target.getTargetUrl();
+    }
+
+
+    private RedirectTarget findTargetByCode(String code){
+
         RedirectTarget target = shortLinkRepository.findTargetByCode(code)
                 .orElseThrow( () -> new ShortLinkNotFoundException(code));
-
 
         if (ExpirationPolicy.isExpired(target.getExpiresAt())) {
             throw new ShortLinkExpiredException(code);
         }
 
-        shortLinkRepository.registerVisitCount(code);
+        return target;
+    }
+
+    @Transactional(readOnly = true)
+    public String lookupTargetWithoutCounting(String code){
+
+        RedirectTarget target = findTargetByCode(code);
 
         return target.getTargetUrl();
     }

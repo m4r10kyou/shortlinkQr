@@ -409,6 +409,54 @@ class ShortLinkServiceTest {
                 .extracting("alias").isEqualTo(customAlias);
     }
 
+    @Test
+    void lookupTargetWithoutCounting_whenCodeExists_returnsTargetUrlAndDoesNotRegisterVisit(){
+
+        String target = "https://example.com";
+        String code = "valid";
+
+        RedirectTarget redirectTarget = redirectTargetExpiringAt(target, null);
+
+        when(shortLinkRepository.findTargetByCode(code)).thenReturn(Optional.of(redirectTarget));
+
+        String result = shortLinkService.lookupTargetWithoutCounting(code);
+
+        assertThat(result).isEqualTo(target);
+
+        verify(shortLinkRepository, never()).registerVisitCount(any());
+    }
+
+    @Test
+    void lookupTargetWithoutCounting_whenCodeDoesNotExist_throwsShortLinkNotFoundException(){
+
+        String code = "no_exists";
+
+        when(shortLinkRepository.findTargetByCode(code)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> shortLinkService.lookupTargetWithoutCounting(code))
+                .isInstanceOf(ShortLinkNotFoundException.class)
+                .hasMessageContaining(code);
+
+        verify(shortLinkRepository, never()).registerVisitCount(any());
+    }
+
+    @Test
+    void lookupTargetWithoutCounting_whenCodeIsExpired_throwsShortLinkExpiredException(){
+
+        String target="https://www.expired.link";
+        String code = "expired";
+        Instant pastExpiration = Instant.now().minus(1, ChronoUnit.HOURS);
+        RedirectTarget redirectTarget = redirectTargetExpiringAt(target, pastExpiration);
+
+        when(shortLinkRepository.findTargetByCode(code)).thenReturn(Optional.of(redirectTarget));
+
+        assertThatThrownBy(() -> shortLinkService.lookupTargetWithoutCounting(code))
+                .isInstanceOf(ShortLinkExpiredException.class)
+                .hasMessageContaining(code);
+
+        verify(shortLinkRepository, never()).registerVisitCount(any());
+    }
+
     private RedirectTarget redirectTargetExpiringAt(String url, Instant when) {
 
         return new RedirectTarget() {
