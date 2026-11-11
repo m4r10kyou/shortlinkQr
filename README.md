@@ -50,6 +50,13 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 - `set visit_count = visit_count + 1 where code = ?` lets the database serialise it
 - Optimistic and pessimistic locking would also be correct, but for a commutative increment they add retries or contention for nothing
 
+**`HEAD` does not count.** *Spring MVC serves a `HEAD` request with the `GET` handler unless a `HEAD` mapping matches it.*
+- So the redirect handler ran in full — counter included — and only the body was discarded on the way out. Every uptime check, crawler and link checker was a visit. Measured against the deployed service before anything was changed: one `curl -I` took a fresh link's `visitCount` from 0 to 1.
+- `resolveCode` keeps its name, its signature and the increment. `lookupTargetWithoutCounting` is the path the `HEAD` handler takes. Both delegate the lookup and the expiry check to one private method, so a missing or expired code answers identically either way. Renaming `resolveCode`, or giving it a boolean parameter, would have put every existing caller one typo away from silently not counting.
+- The second method is `readOnly`, which here is a guard rather than documentation: PostgreSQL rejects an `UPDATE` inside a read-only transaction, so a stray increment added there later fails loudly instead of counting quietly.
+- Both controller handlers declare the same path pattern constant. A `HEAD` mapping with a looser pattern would accept codes the `GET` rejects, and could win the routing comparison against the more specific `GET` mapping — restoring the old behaviour with every other test still green. That case has a test of its own.
+- `HEAD` answers with the same status and the same headers as `GET`, body excluded. Both controller tests assert the same three headers, so the pair cannot drift apart.
+
 ### Redirect path
 
 **The redirect reads two columns.** *A projection, not the entity.*
@@ -349,6 +356,7 @@ Five levels, each with a different cost and purpose:
 - **The public health view does not prove the service works.** Without a token, `/api/health` reports that the process is running and nothing more, and `/api/health/ping` reports even less. If the database is unreachable, both still answer `200` while every redirect fails. This is deliberate — a health check that queried the database on every anonymous call would exhaust the database's monthly compute allowance — but it means the uptime badge measures liveness, not correctness.
 - **The management GET loads the logo to answer a boolean.** `getByCode` fetches the whole entity, logo bytes included, and `hasLogo` is derived from it. A `@Basic(fetch = LAZY)` on a basic attribute does nothing without bytecode enhancement, so the blob travels on every read of a link that has one. The redirect path already avoids this with a projection; the management path would need its own.
 - **The free hosting tier sleeps.** The application host suspends the service after fifteen minutes without traffic and takes about a minute to wake, so the first request after a quiet period is slow. The database suspends after five minutes and wakes in well under a second.
+- **The visit counter is not a count of people.** `HEAD` no longer counts, but link previewers that issue a full `GET` — WhatsApp and Telegram among them — are indistinguishable from a human click at this layer. This removed one class of inflation, not all of it.
 
 ## 🛠️ Tech Stack
 - **Java 21**
@@ -361,7 +369,7 @@ Five levels, each with a different cost and purpose:
 - **Render** (application hosting)
 - **ZXing** (`core` for encoding, `javase` for the bridge to `BufferedImage`).
 - **Testing Ecosystem:**
-    - **JUnit 6** (managed by `spring-boot-dependencies` 4.1.1, not chosen explicitly)
+    - **JUnit 6** (managed by `spring-boot-dependencies` 4.1.2, not chosen explicitly)
     - **Testcontainers** (a real PostgreSQL for the persistence tests)
     - **Mockito** (Mocking domain logic without database overhead)
     - **AssertJ** (Fluent and semantic assertions)
@@ -435,7 +443,7 @@ Four requests upload a file from `docs/`, referenced relatively, so set
 Postman's working directory (Settings → General) to the repository root before
 running the collection.
 
-Forty-one requests across seven folders:
+Forty-six requests across eight folders:
 
 - **Links API** — creation and retrieval, including the alias conflict. The
   generated code and the management token are captured into variables, so later
@@ -459,10 +467,14 @@ Forty-one requests across seven folders:
   with a wrong one. The authorised view is not here: a valid
   `SHORTLINK_ADMIN_TOKEN` cannot live in a versioned collection, and an empty
   variable would fail for anyone who clones the repository.
+- **HEAD and visit counting** — a link of its own, a `HEAD` that must leave the
+  counter at zero, and a `GET` that must take it to one. The second half carries
+  as much weight as the first: a fix that stopped both from counting would pass
+  every `HEAD` assertion in the folder.
 
-Last full run against an empty database: 41 requests, 91 assertions, 91 passed.
+Last full run against an empty database: 46 requests, 101 assertions, 101 passed.
 Two of those assertions live inside a conditional in request 02 and only run
-the first time, when the custom alias is still free; a second pass reports 89.
+the first time, when the custom alias is still free; a second pass reports 99.
 
 The rate limit is not exercised here. Triggering it would take more
 requests than the limit allows in a minute, and lowering the limit for
