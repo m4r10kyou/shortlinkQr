@@ -76,8 +76,8 @@ class ShortLinkControllerTest {
                 }
                 """;
 
-        ShortLink unShortLink = new ShortLink("mi-repo", "https://example.com",null,hashToken);
-        CreatedShortLink createdShortLink = new CreatedShortLink(unShortLink,"raw-token");
+        ShortLink unShortLink = new ShortLink("mi-repo", "https://example.com", null, hashToken);
+        CreatedShortLink createdShortLink = new CreatedShortLink(unShortLink, "raw-token");
 
         when(shortLinkService.createLink(any(), any(), any())).thenReturn(createdShortLink);
 
@@ -112,10 +112,10 @@ class ShortLinkControllerTest {
     @Test
     void getShortLink_withUnknownCode_returns404WithFailingCode() throws Exception {
 
-        when(shortLinkService.getByCodeWithAuthorization("notFound","rawToken")).thenThrow(new ShortLinkNotFoundException("notFound"));
+        when(shortLinkService.getByCodeWithAuthorization("notFound", "rawToken")).thenThrow(new ShortLinkNotFoundException("notFound"));
 
         mockMvc.perform(get("/api/links/notFound")
-                        .header("X-Management-Token","rawToken"))
+                        .header("X-Management-Token", "rawToken"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.type").value("urn:problem-type:not-found"))
                 .andExpect(jsonPath("$.code").value("notFound"));
@@ -124,9 +124,9 @@ class ShortLinkControllerTest {
     @Test
     void uploadLogo_withValidRequest_returns200WithTheUpdatedLink() throws Exception {
 
-        ShortLink shortLink = new ShortLink("mi-repo", "https://example.com",null,hashToken);
+        ShortLink shortLink = new ShortLink("mi-repo", "https://example.com", null, hashToken);
         String code = "mi-repo";
-        String token= "validToken";
+        String token = "validToken";
         byte[] originalBytes = "contenido-original".getBytes();
         byte[] sanitizedBytes = "contenido-saneado".getBytes();
 
@@ -140,19 +140,20 @@ class ShortLinkControllerTest {
         shortLink.attachLogo(sanitizedBytes);
 
         when(logoImageProcessor.sanitize(any(byte[].class))).thenReturn(sanitizedBytes);
-        when(shortLinkService.attachLogo(eq(code), any(byte[].class),anyString()))
+        when(shortLinkService.attachLogo(eq(code), any(byte[].class), anyString()))
                 .thenReturn(shortLink);
 
-        mockMvc.perform( MockMvcRequestBuilders
-                        .multipart("/api/links/{code}/logo",code)
+        mockMvc.perform(MockMvcRequestBuilders
+                        .multipart("/api/links/{code}/logo", code)
                         .header("X-Management-Token", token)
                         .file(mockFile))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.hasLogo").value(true))
-                .andExpect(jsonPath("$.managementToken").doesNotExist());
+                .andExpect(jsonPath("$.managementToken").doesNotExist())
+                .andExpect(jsonPath("$.visitCount").doesNotExist());
 
 
-        verify(shortLinkService).attachLogo(code, sanitizedBytes,token);
+        verify(shortLinkService).attachLogo(code, sanitizedBytes, token);
     }
 
     @Test
@@ -195,12 +196,12 @@ class ShortLinkControllerTest {
 
         when(logoImageProcessor.sanitize(any(byte[].class))).thenReturn(sanitizedBytes);
 
-        when(shortLinkService.attachLogo(eq(code), any(byte[].class),anyString()))
+        when(shortLinkService.attachLogo(eq(code), any(byte[].class), anyString()))
                 .thenThrow(new ShortLinkNotFoundException("notFound"));
 
         mockMvc.perform(MockMvcRequestBuilders
                         .multipart("/api/links/{code}/logo", code)
-                        .header("X-Management-Token","rawToken")
+                        .header("X-Management-Token", "rawToken")
                         .file(mockFile))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.type").value("urn:problem-type:not-found"))
@@ -221,12 +222,12 @@ class ShortLinkControllerTest {
     @Test
     void getQrCode_withALinkThatHasALogo_returns200AndUsesTheBrandedGenerator() throws Exception {
 
-        ShortLink shortLink = new ShortLink("has-logo", "https://example.com",null,hashToken);
+        ShortLink shortLink = new ShortLink("has-logo", "https://example.com", null, hashToken);
 
-        byte[] logoBytes = new byte[] { 1, 2, 3 };
+        byte[] logoBytes = new byte[]{1, 2, 3};
         shortLink.attachLogo(logoBytes);
 
-        byte[] brandedQr = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47 };
+        byte[] brandedQr = new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47};
 
         String expectedUrl = "http://short.test/has-logo";
 
@@ -248,9 +249,9 @@ class ShortLinkControllerTest {
     @Test
     void getQrCode_withALinkWithoutALogo_returns200AndNeverUsesTheBrandedGenerator() throws Exception {
 
-        ShortLink shortLink = new ShortLink("no-logo", "https://example.com",null,hashToken);
+        ShortLink shortLink = new ShortLink("no-logo", "https://example.com", null, hashToken);
 
-        byte[] normalQr = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47 };
+        byte[] normalQr = new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47};
 
         String expectedUrl = "http://short.test/no-logo";
 
@@ -270,7 +271,7 @@ class ShortLinkControllerTest {
     }
 
     @Test
-    void createLink_withValidRequest_returns201AndHasManagementToken() throws Exception{
+    void createLink_withValidRequest_returns201AndHasManagementToken() throws Exception {
 
         String json = """
                 {
@@ -279,8 +280,8 @@ class ShortLinkControllerTest {
                 }
                 """;
 
-        ShortLink shortLinkWithToken = new ShortLink("tokenmng-repo", "https://example.com",null,hashToken);
-        CreatedShortLink createdShortLink = new CreatedShortLink(shortLinkWithToken, "raw-token" );
+        ShortLink shortLinkWithToken = new ShortLink("tokenmng-repo", "https://example.com", null, hashToken);
+        CreatedShortLink createdShortLink = new CreatedShortLink(shortLinkWithToken, "raw-token");
 
         when(shortLinkService.createLink(any(), any(), any())).thenReturn(createdShortLink);
 
@@ -294,18 +295,19 @@ class ShortLinkControllerTest {
     }
 
     @Test
-    void getShortLink_withValidRequest_returns200WithoutTheManagementToken() throws Exception{
+    void getShortLink_withValidRequest_returns200WithoutTheManagementToken() throws Exception {
 
-        String code ="my-sl-no-token";
+        String code = "my-sl-no-token";
         String token = "raw-token";
-        ShortLink getSLnoMngToken = new ShortLink(code, "https://example.com",null,hashToken);
+        ShortLink getSLnoMngToken = new ShortLink(code, "https://example.com", null, hashToken);
 
         when(shortLinkService.getByCodeWithAuthorization(code, token)).thenReturn(getSLnoMngToken);
 
         mockMvc.perform(get("/api/links/{code}", code)
-                        .header("X-Management-Token",token))
+                        .header("X-Management-Token", token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.managementToken").doesNotExist())
+                .andExpect(jsonPath("$.visitCount").exists())
                 .andExpect(jsonPath("$.shortUrl").value("http://short.test/my-sl-no-token"))
                 .andExpect(jsonPath("$.targetUrl").value("https://example.com"));
     }
@@ -326,8 +328,8 @@ class ShortLinkControllerTest {
 
         when(logoImageProcessor.sanitize(any(byte[].class))).thenReturn(sanitizedBytes);
 
-        when(shortLinkService.attachLogo(eq(code), any(byte[].class),nullable(String.class)))
-                .thenThrow(new InvalidTokenException("Management token is missing",code));
+        when(shortLinkService.attachLogo(eq(code), any(byte[].class), nullable(String.class)))
+                .thenThrow(new InvalidTokenException("Management token is missing", code));
 
         mockMvc.perform(MockMvcRequestBuilders
                         .multipart("/api/links/{code}/logo", code)
@@ -339,14 +341,14 @@ class ShortLinkControllerTest {
 
     @Test
     void getShortLink_withAnInvalidManagementToken_returns403() throws Exception {
-        String code ="my-sl-no-token";
+        String code = "my-sl-no-token";
         String invalidToken = "that-is-invalid";
 
         when(shortLinkService.getByCodeWithAuthorization(code, invalidToken))
-                .thenThrow(new InvalidTokenException("Management token is missing",code));
+                .thenThrow(new InvalidTokenException("Management token is missing", code));
 
         mockMvc.perform(get("/api/links/{code}", code)
-                        .header("X-Management-Token",invalidToken))
+                        .header("X-Management-Token", invalidToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.type")
                         .value("urn:problem-type:invalid-management-token"));
@@ -355,7 +357,7 @@ class ShortLinkControllerTest {
     @Test
     void updateLink_withNoFields_returns400AndNeverCallsService() throws Exception {
 
-        String code ="empty-body";
+        String code = "empty-body";
         String errorMsg = "Can not edit Short Link without parameters";
         String json = "{}";
 
@@ -371,7 +373,7 @@ class ShortLinkControllerTest {
     @Test
     void updateLink_withBothExpiryFields_returns400AndNeverCallsService() throws Exception {
 
-        String code ="both-expiry";
+        String code = "both-expiry";
         Instant expiresAt = Instant.now().plus(30, ChronoUnit.DAYS);
         String json = """
                 {
@@ -392,7 +394,7 @@ class ShortLinkControllerTest {
     @Test
     void updateLink_withAValidRequest_returns200AndTheUpdatedLink() throws Exception {
 
-        String code ="changeUrl";
+        String code = "changeUrl";
         String token = "validToken";
         String newTargetUrl = "https://new.example.com";
         String json = """
@@ -412,6 +414,7 @@ class ShortLinkControllerTest {
                         .content(json))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.targetUrl").value(newTargetUrl))
+                .andExpect(jsonPath("$.visitCount").doesNotExist())
                 .andExpect(jsonPath("$.managementToken").doesNotExist());
 
         ArgumentCaptor<ShortLinkUpdate> updateCaptor = ArgumentCaptor.forClass(ShortLinkUpdate.class);
@@ -426,7 +429,7 @@ class ShortLinkControllerTest {
     @Test
     void updateLink_withChangeUrlAndClearExpiry_returns200AndTheUpdatedLink() throws Exception {
 
-        String code ="changeUrl-clearExpity";
+        String code = "changeUrl-clearExpity";
         String token = "validToken";
         String newTargetUrl = "https://new.example.com";
         String json = """
@@ -447,6 +450,7 @@ class ShortLinkControllerTest {
                         .content(json))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.targetUrl").value(newTargetUrl))
+                .andExpect(jsonPath("$.visitCount").doesNotExist())
                 .andExpect(jsonPath("$.managementToken").doesNotExist());
 
         ArgumentCaptor<ShortLinkUpdate> updateCaptor = ArgumentCaptor.forClass(ShortLinkUpdate.class);
@@ -469,7 +473,7 @@ class ShortLinkControllerTest {
                 """;
 
         when(shortLinkService.updateLink(eq(code), any(ShortLinkUpdate.class), nullable(String.class)))
-                .thenThrow(new InvalidTokenException("Management token is missing",code));
+                .thenThrow(new InvalidTokenException("Management token is missing", code));
 
 
         mockMvc.perform(patch("/api/links/{code}", code)
@@ -485,10 +489,10 @@ class ShortLinkControllerTest {
 
         String code = "blank-target";
         String json = """
-                        {
-                            "targetUrl": ""
-                        }
-                        """;
+                {
+                    "targetUrl": ""
+                }
+                """;
 
         mockMvc.perform(patch("/api/links/{code}", code)
                         .header("X-Management-Token", "token")
@@ -504,12 +508,12 @@ class ShortLinkControllerTest {
     void updateLink_withNonHttpScheme_returns400() throws Exception {
 
         String code = "no-http";
-        String noHttp ="mailto:someone@email.com";
+        String noHttp = "mailto:someone@email.com";
         String json = """
-                        {
-                            "targetUrl": "%s"
-                        }
-                        """.formatted(noHttp);
+                {
+                    "targetUrl": "%s"
+                }
+                """.formatted(noHttp);
 
         mockMvc.perform(patch("/api/links/{code}", code)
                         .header("X-Management-Token", "token")
@@ -526,10 +530,10 @@ class ShortLinkControllerTest {
 
         String code = "past-expiry";
         String json = """
-                        {
-                           "expiresAt" : "2019-01-21T23:30:45Z"
-                        }
-                        """;
+                {
+                   "expiresAt" : "2019-01-21T23:30:45Z"
+                }
+                """;
 
         mockMvc.perform(patch("/api/links/{code}", code)
                         .header("X-Management-Token", "token")
@@ -564,11 +568,11 @@ class ShortLinkControllerTest {
         String targetUrl = "https://www.github.com/someone";
 
         String json = """
-        {
-            "customAlias": "%s",
-            "targetUrl": "%s"
-        }
-        """.formatted(customAlias,targetUrl);
+                {
+                    "customAlias": "%s",
+                    "targetUrl": "%s"
+                }
+                """.formatted(customAlias, targetUrl);
 
         mockMvc.perform(post("/api/links")
                         .contentType(MediaType.APPLICATION_JSON)
