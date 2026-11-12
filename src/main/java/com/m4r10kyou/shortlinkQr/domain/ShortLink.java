@@ -34,7 +34,7 @@ public class ShortLink {
 
     private byte[] logoData;
 
-    @Column(nullable = false)
+    @Column(nullable = false, updatable = false)
     private int visitCount;
 
     @Column(length = 64)

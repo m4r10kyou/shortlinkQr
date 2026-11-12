@@ -57,6 +57,14 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 - Both controller handlers declare the same path pattern constant. A `HEAD` mapping with a looser pattern would accept codes the `GET` rejects, and could win the routing comparison against the more specific `GET` mapping — restoring the old behaviour with every other test still green. That case has a test of its own.
 - `HEAD` answers with the same status and the same headers as `GET`, body excluded. Both controller tests assert the same three headers, so the pair cannot drift apart.
 
+**An edit could erase a visit.** *An atomic `UPDATE` is not enough if something else writes the whole row.*
+- `registerVisitCount` increments in the database, so two simultaneous visits cannot lose each other. But an edit loads the entity, and Hibernate writes every mapped column when that transaction commits — including the `visitCount` it read before the visit happened. A `PATCH` or a logo upload could roll the counter back.
+- Reproduced in a Testcontainers test that drives both transactions in a fixed order, with no threads and no sleeps: load the entity, register a visit in a separate transaction that commits, then change the target and commit. Before the fix the counter returned to 0, and the SQL log showed the edit writing six columns to change one.
+- The fix is `@Column(updatable = false)` on `visitCount`. The column is written at insert and belongs to the atomic `UPDATE` after that; nothing going through the entity can touch it. `createdAt` already carried the same annotation for the same reason.
+- `@DynamicUpdate` would also have stopped it, by narrowing the generated `UPDATE` to the columns that changed. It answers a different question: it limits *what gets written*, not *who may write it*. A field added to a DTO later would still reach the column.
+- `@Version` would not have helped at all. Optimistic locking guards writes that pass through the entity, and the increment is a `@Modifying` query that never touches the version column — the edit would have committed with its version intact and taken the visit with it.
+- The counter is no longer returned by the responses to edits and logo uploads, only by creation and the management read. The value an edit holds is a snapshot from before its own transaction, so a client could read 5, edit, and be told 4. A counter that goes backwards reads as data loss even when there is none.
+
 ### Redirect path
 
 **The redirect reads two columns.** *A projection, not the entity.*
@@ -472,9 +480,10 @@ Forty-six requests across eight folders:
   as much weight as the first: a fix that stopped both from counting would pass
   every `HEAD` assertion in the folder.
 
-Last full run against an empty database: 46 requests, 101 assertions, 101 passed.
-Two of those assertions live inside a conditional in request 02 and only run
-the first time, when the custom alias is still free; a second pass reports 99.
+Last full run: 46 requests, 104 assertions, 104 passed, against a database
+that already held the custom alias. Two of those assertions live inside a
+conditional in request 02 and only run when the alias is still free, so a
+first run against an empty database reports 106.
 
 The rate limit is not exercised here. Triggering it would take more
 requests than the limit allows in a minute, and lowering the limit for

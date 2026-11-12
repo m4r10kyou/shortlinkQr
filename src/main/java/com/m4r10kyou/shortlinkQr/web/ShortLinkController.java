@@ -3,6 +3,7 @@ package com.m4r10kyou.shortlinkQr.web;
 import com.m4r10kyou.shortlinkQr.domain.ShortLink;
 import com.m4r10kyou.shortlinkQr.dto.ShortLinkCreationResponse;
 import com.m4r10kyou.shortlinkQr.dto.ShortLinkEditionRequest;
+import com.m4r10kyou.shortlinkQr.dto.ShortLinkEditionResponse;
 import com.m4r10kyou.shortlinkQr.dto.ShortLinkRequest;
 import com.m4r10kyou.shortlinkQr.dto.ShortLinkResponse;
 import com.m4r10kyou.shortlinkQr.service.CreatedShortLink;
@@ -79,9 +80,9 @@ public class ShortLinkController {
     }
 
     @PatchMapping("/{code}")
-    public ShortLinkResponse editShortLink(@PathVariable("code") String code,
-                                           @RequestHeader(required = false , name ="X-Management-Token")String rawToken,
-                                           @Valid @RequestBody ShortLinkEditionRequest shortLink) {
+    public ShortLinkEditionResponse editShortLink(@PathVariable("code") String code,
+                                                           @RequestHeader(required = false , name ="X-Management-Token")String rawToken,
+                                                           @Valid @RequestBody ShortLinkEditionRequest shortLink) {
 
 
         ShortLinkUpdate shortLinkChangeRequest = new ShortLinkUpdate(shortLink.targetUrl(),
@@ -90,7 +91,7 @@ public class ShortLinkController {
 
         ShortLink shortLinkUpdated = shortLinkService.updateLink(code, shortLinkChangeRequest, rawToken);
 
-        return ShortLinkResponse.from(shortLinkUpdated, baseUrl);
+        return ShortLinkEditionResponse.from(shortLinkUpdated, baseUrl);
     }
 
     @GetMapping(value = "/{code}/qr",
@@ -107,7 +108,7 @@ public class ShortLinkController {
     }
 
     @PostMapping(value = "/{code}/logo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ShortLinkResponse uploadLogo(@PathVariable("code") String code,
+    public ShortLinkEditionResponse uploadLogo(@PathVariable("code") String code,
                                         @RequestParam("file") MultipartFile file,
                                         @RequestHeader(required = false , name ="X-Management-Token")String rawToken) throws IOException {
 
@@ -121,7 +122,7 @@ public class ShortLinkController {
 
         ShortLink shortLink = shortLinkService.attachLogo(code, sanitizedImgBytes,rawToken);
 
-        return ShortLinkResponse.from(shortLink, baseUrl);
+        return ShortLinkEditionResponse.from(shortLink, baseUrl);
     }
 
     private byte[] generateQrImage(ShortLink shortLink){
