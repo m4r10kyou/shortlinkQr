@@ -1,0 +1,1 @@
+alter table short_links add column deleted_at timestamp(6) with time zone;

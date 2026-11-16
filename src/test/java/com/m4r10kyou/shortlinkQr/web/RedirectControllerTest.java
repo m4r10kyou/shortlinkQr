@@ -1,5 +1,6 @@
 package com.m4r10kyou.shortlinkQr.web;
 
+import com.m4r10kyou.shortlinkQr.exception.ShortLinkDeletedException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkExpiredException;
 import com.m4r10kyou.shortlinkQr.service.ShortLinkService;
 import org.junit.jupiter.api.Test;
@@ -35,7 +36,10 @@ class RedirectControllerTest {
 
         when(shortLinkService.resolveCode("mi-repo")).thenReturn("https://example.com");
 
-        mockMvc.perform(get("/mi-repo")).andExpect(status().isFound()).andExpect(header().string(HttpHeaders.LOCATION, "https://example.com")).andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-cache"));
+        mockMvc.perform(get("/mi-repo"))
+                .andExpect(status().isFound())
+                .andExpect(header().string(HttpHeaders.LOCATION, "https://example.com"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-cache"));
 
         verify(shortLinkService).resolveCode("mi-repo");
         verify(shortLinkService, never()).lookupTargetWithoutCounting("mi-repo");
@@ -46,7 +50,10 @@ class RedirectControllerTest {
 
         when(shortLinkService.resolveCode("expired")).thenThrow(new ShortLinkExpiredException("expired"));
 
-        mockMvc.perform(get("/expired")).andExpect(status().isGone()).andExpect(jsonPath("$.type").value("urn:problem-type:link-expired")).andExpect(jsonPath("$.code").value("expired"));
+        mockMvc.perform(get("/expired"))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.type").value("urn:problem-type:link-expired"))
+                .andExpect(jsonPath("$.code").value("expired"));
 
         verify(shortLinkService).resolveCode("expired");
         verify(shortLinkService, never()).lookupTargetWithoutCounting("expired");
@@ -60,7 +67,10 @@ class RedirectControllerTest {
 
         when(shortLinkService.lookupTargetWithoutCounting(code)).thenReturn("https://example.com");
 
-        mockMvc.perform(head("/{code}", code)).andExpect(status().isFound()).andExpect(header().string(HttpHeaders.LOCATION, "https://example.com")).andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-cache"));
+        mockMvc.perform(head("/{code}", code))
+                .andExpect(status().isFound())
+                .andExpect(header().string(HttpHeaders.LOCATION, "https://example.com"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-cache"));
 
         verify(shortLinkService, never()).resolveCode(code);
         verify(shortLinkService).lookupTargetWithoutCounting(code);
@@ -81,5 +91,21 @@ class RedirectControllerTest {
         mockMvc.perform(head("/{code}", code)).andExpect(status().isNotFound());
 
         verifyNoInteractions(shortLinkService);
+    }
+
+    @Test
+    void redirect_withADeletedCode_returns410WithFailingCode() throws Exception {
+
+        when(shortLinkService.resolveCode("mi-repo-deleted"))
+                .thenThrow(new ShortLinkDeletedException("mi-repo-deleted"));
+
+        mockMvc.perform(get("/mi-repo-deleted"))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.type")
+                        .value("urn:problem-type:link-deleted"))
+                .andExpect(jsonPath("$.code").value("mi-repo-deleted"));
+
+        verify(shortLinkService).resolveCode("mi-repo-deleted");
+        verify(shortLinkService, never()).lookupTargetWithoutCounting("mi-repo-deleted");
     }
 }

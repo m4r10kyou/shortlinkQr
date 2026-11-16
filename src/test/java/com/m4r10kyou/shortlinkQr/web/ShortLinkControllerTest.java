@@ -3,6 +3,7 @@ package com.m4r10kyou.shortlinkQr.web;
 import com.m4r10kyou.shortlinkQr.domain.ShortLink;
 import com.m4r10kyou.shortlinkQr.exception.InvalidLogoException;
 import com.m4r10kyou.shortlinkQr.exception.InvalidTokenException;
+import com.m4r10kyou.shortlinkQr.exception.ShortLinkDeletedException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkNotFoundException;
 import com.m4r10kyou.shortlinkQr.service.CreatedShortLink;
 import com.m4r10kyou.shortlinkQr.service.LogoImageProcessor;
@@ -32,9 +33,11 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -475,7 +478,6 @@ class ShortLinkControllerTest {
         when(shortLinkService.updateLink(eq(code), any(ShortLinkUpdate.class), nullable(String.class)))
                 .thenThrow(new InvalidTokenException("Management token is missing", code));
 
-
         mockMvc.perform(patch("/api/links/{code}", code)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json))
@@ -550,7 +552,6 @@ class ShortLinkControllerTest {
 
         String code = "no-body";
 
-
         mockMvc.perform(patch("/api/links/{code}", code)
                         .header("X-Management-Token", "token")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -581,7 +582,51 @@ class ShortLinkControllerTest {
                 .andExpect(jsonPath("$.errors.customAlias").exists());
 
         verify(shortLinkService, never()).createLink(any(), any(), any());
+    }
 
+    @Test
+    void deleteShortLink_withAValidToken_returns204() throws Exception {
+        String code = "code-to-delete";
+
+        mockMvc.perform(delete("/api/links/{code}", code)
+                        .header("X-Management-Token", hashToken))
+                .andExpect(status().isNoContent());
+
+        verify(shortLinkService).deleteShortLink(code, hashToken);
+    }
+
+    @Test
+    void deleteShortLink_withoutManagementToken_returns403() throws Exception {
+
+        String code = "code-to-delete";
+        String errorMsg = "Management token is missing";
+
+        doThrow(new InvalidTokenException(errorMsg, code))
+                .when(shortLinkService).deleteShortLink(eq(code), nullable(String.class));
+
+        mockMvc.perform(delete("/api/links/{code}", code))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.type")
+                        .value("urn:problem-type:invalid-management-token"))
+                .andExpect(jsonPath("$.code").doesNotExist());
+
+    }
+
+    @Test
+    void deleteShortLink_withAnAlreadyDeletedCode_returns410() throws Exception {
+
+        String code = "already_deleted";
+
+        doThrow(new ShortLinkDeletedException(code))
+                .when(shortLinkService).deleteShortLink(code, hashToken);
+
+        mockMvc.perform(delete("/api/links/{code}", code)
+                        .header("X-Management-Token", hashToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.type")
+                        .value("urn:problem-type:link-deleted"))
+                .andExpect(jsonPath("$.code").value(code));
     }
 
 }

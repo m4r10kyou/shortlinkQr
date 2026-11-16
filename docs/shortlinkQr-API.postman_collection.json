@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "f33f0d53-39da-41d7-82cc-b1d90ca9f2b8",
     "name": "shortlinkQr-API",
-    "description": "Functional test collection for the shortlinkQr API.\n\nThe collection is organised in eight folders:\n\n1. Links API - the happy paths of the management endpoints.\n    \n2. Validation - requests that must be rejected by Bean Validation with 400 and a per-field `errors` map.\n    \n3. Protocol errors - malformed or unsupported requests handled by ResponseEntityExceptionHandler.\n    \n4. Redirect - the public endpoint a scanned QR code hits.\n    \n5. QR & Logo - the endpoint for check add image to a previous QR.\n    \n6. Authorization & edition - managing the link via PATCH and asserting token validation.\n    \n7. Health - the two health endpoints, and the boundary of the operator token.\n    \n8. HEAD and visit counting - the redirect answered without a body, and the counter it must not touch.\n    \n\nEvery request carries a test script asserting the expected status, so the whole collection can be executed with the Collection Runner and read as a pass/fail report.\n\nVariables:\n\n- baseUrl: host of the running application (default [http://localhost:9080](http://localhost:9080))\n    \n- lastCode: filled automatically by the first request, so later requests need no manual copying.\n    \n- aliasCode: the custom alias used to exercise the conflict case.\n    \n- managementToken: captured token to authenticate edit and inspection endpoints.\n    \n- wrongToken: a syntactically plausible token that was never issued, for the 403 paths.\n    \n- plainQrSize: stored size of the unbranded QR code.\n    \n- headCode: the link created by folder 8, kept apart so its counter can be asserted exactly.\n    \n- headToken: its management token.",
+    "description": "Functional test collection for the shortlinkQr API.\n\nThe collection is organised in nine folders:\n\n1. Links API - the happy paths of the management endpoints.\n    \n2. Validation - requests that must be rejected by Bean Validation with 400 and a per-field `errors` map.\n    \n3. Protocol errors - malformed or unsupported requests handled by ResponseEntityExceptionHandler.\n    \n4. Redirect - the public endpoint a scanned QR code hits.\n    \n5. QR & Logo - the endpoint for check add image to a previous QR.\n    \n6. Authorization & edition - managing the link via PATCH and asserting token validation.\n    \n7. Health - the two health endpoints, and the boundary of the operator token.\n    \n8. HEAD and visit counting - the redirect answered without a body, and the counter it must not touch.\n    \n9. Soft delete - the link is marked, every path answers 410, and the code stays reserved.\n    \n\nEvery request carries a test script asserting the expected status, so the whole collection can be executed with the Collection Runner and read as a pass/fail report.\n\nVariables:\n\n- baseUrl: host of the running application (default [http://localhost:9080](http://localhost:9080))\n    \n- lastCode: filled automatically by the first request, so later requests need no manual copying.\n    \n- aliasCode: the custom alias used to exercise the conflict case.\n    \n- managementToken: captured token to authenticate edit and inspection endpoints.\n    \n- wrongToken: a syntactically plausible token that was never issued, for the 403 paths.\n    \n- plainQrSize: stored size of the unbranded QR code.\n    \n- headCode: the link created by folder 8, kept apart so its counter can be asserted exactly.\n    \n- headToken: its management token.\n    \n- deleteAlias: generated per run; a deleted code is reserved for ever, so a fixed one would only work once.\n    \n- deleteToken: its management token.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "1343267"
   },
@@ -1975,6 +1975,350 @@
         }
       ],
       "description": "Spring MVC serves a `HEAD` request with the `GET` handler when no `HEAD`  \nmapping matches it, so every `HEAD` — from uptime monitors, crawlers and link  \ncheckers — used to increment the visit counter. Confirmed against the deployed  \nservice before anything was changed: one `curl -I` took a fresh link's  \n`visitCount` from 0 to 1.\n\nThis folder creates its own link instead of reusing `lastCode`. The assertions  \nare on exact counter values, and the earlier folders have already resolved that  \nlink.\n\nBoth halves are asserted. A fix that stopped the `HEAD` from counting and took  \nthe `GET` with it would pass requests 43 and 44 and fail 46.\n\nRedirect following is disabled on the two requests that hit the short link, so  \nthe 302 itself is visible instead of the destination's response.\n\nWhat this does not fix: the counter is still not a count of people. Link  \npreviewers that issue a full `GET` — WhatsApp and Telegram among them — are  \nindistinguishable from a human click at this layer."
+    },
+    {
+      "name": "9. Soft delete",
+      "item": [
+        {
+          "name": "47 - Create a link to delete",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"deleteAlias\", \"del-\" + Date.now().toString().slice(-8));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created\", () => pm.response.to.have.status(201));\n\nconst body = pm.response.json();\npm.collectionVariables.set(\"deleteToken\", body.managementToken);\n\npm.test(\"the alias is the one requested\", () =>\n    pm.expect(body.shortUrl).to.include(pm.collectionVariables.get(\"deleteAlias\")));\npm.test(\"a management token is returned\", () =>\n    pm.expect(body.managementToken).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetUrl\": \"https://example.com\",\n  \"customAlias\": \"{{deleteAlias}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/links",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "links"
+              ]
+            },
+            "description": "Deleting a code reserves it for ever, so a fixed alias would work once and return 409 on every later run — this folder would poison itself. The alias is generated per run instead."
+          },
+          "response": []
+        },
+        {
+          "name": "48 - Delete it",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"204 No Content\", () => pm.response.to.have.status(204));\npm.test(\"no body\", () => pm.expect(pm.response.text() || \"\").to.eql(\"\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Management-Token",
+                "value": "{{deleteToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/links/{{deleteAlias}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "links",
+                "{{deleteAlias}}"
+              ]
+            },
+            "description": "204 with no body. There is nothing useful to say about a link that no longer serves: asking to delete it and being told it is deleted adds no information."
+          },
+          "response": []
+        },
+        {
+          "name": "49 - Delete it again",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"410 Gone\", () => pm.response.to.have.status(410));\n\nconst body = pm.response.json();\npm.test(\"problem type identifies the deletion\", () =>\n    pm.expect(body.type).to.eql(\"urn:problem-type:link-deleted\"));\npm.test(\"the failing code is returned to its owner\", () =>\n    pm.expect(body.code).to.eql(pm.collectionVariables.get(\"deleteAlias\")));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Management-Token",
+                "value": "{{deleteToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/links/{{deleteAlias}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "links",
+                "{{deleteAlias}}"
+              ]
+            },
+            "description": "Deleting is not idempotent in status. The first call changes the world and says 204; the second finds a link that is already gone and says 410, the same answer every read path gives."
+          },
+          "response": []
+        },
+        {
+          "name": "50 - Resolve a deleted code",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"410 Gone\", () => pm.response.to.have.status(410));\n\nconst body = pm.response.json();\npm.test(\"problem type identifies the deletion\", () =>\n    pm.expect(body.type).to.eql(\"urn:problem-type:link-deleted\"));\npm.test(\"the failing code is named\", () =>\n    pm.expect(body.code).to.eql(pm.collectionVariables.get(\"deleteAlias\")));"
+                ]
+              }
+            }
+          ],
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/{{deleteAlias}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "{{deleteAlias}}"
+              ]
+            },
+            "description": "The public endpoint a scanned QR hits. 410 and not 404: this code existed and its owner removed it, which is a different fact and one an HTML error page could one day explain."
+          },
+          "response": []
+        },
+        {
+          "name": "51 - HEAD a deleted code",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"410 Gone\", () => pm.response.to.have.status(410));\npm.test(\"no body\", () => pm.expect(pm.response.text() || \"\").to.eql(\"\"));"
+                ]
+              }
+            }
+          ],
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          },
+          "request": {
+            "method": "HEAD",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/{{deleteAlias}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "{{deleteAlias}}"
+              ]
+            },
+            "description": "`HEAD` inherits the behaviour without its own check: both redirect paths share one private lookup in the service, so adding the deleted state there covered `GET` and `HEAD` at once."
+          },
+          "response": []
+        },
+        {
+          "name": "52 - Read a deleted code",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"410 Gone\", () => pm.response.to.have.status(410));\n\nconst body = pm.response.json();\npm.test(\"problem type identifies the deletion\", () =>\n    pm.expect(body.type).to.eql(\"urn:problem-type:link-deleted\"));\npm.test(\"the failing code is named\", () =>\n    pm.expect(body.code).to.eql(pm.collectionVariables.get(\"deleteAlias\")));"
+                ]
+              }
+            }
+          ],
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          },
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Management-Token",
+                "value": "{{deleteToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/links/{{deleteAlias}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "links",
+                "{{deleteAlias}}"
+              ]
+            },
+            "description": "Even its owner gets 410. The row is kept for audit, but the API stops serving the link."
+          },
+          "response": []
+        },
+        {
+          "name": "53 - QR of a deleted code",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"410 Gone\", () => pm.response.to.have.status(410));\n\npm.test(\"problem type identifies the deletion\", () =>\n    pm.expect(pm.response.json().type).to.eql(\"urn:problem-type:link-deleted\"));\npm.test(\"the failing code is named\", () =>\n    pm.expect(pm.response.json().code).to.eql(pm.collectionVariables.get(\"deleteAlias\")));"
+                ]
+              }
+            }
+          ],
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/links/{{deleteAlias}}/qr",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "links",
+                "{{deleteAlias}}",
+                "qr"
+              ]
+            },
+            "description": "The symbol goes too. Generating it would hand someone a QR that resolves to 410 the moment it is scanned."
+          },
+          "response": []
+        },
+        {
+          "name": "54 - The code stays reserved",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"409 Conflict\", () => pm.response.to.have.status(409));\npm.test(\"problem type identifies the conflict\", () =>\n    pm.expect(pm.response.json().type).to.eql(\"urn:problem-type:alias-occupied\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetUrl\": \"https://example.com\",\n  \"customAlias\": \"{{deleteAlias}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/links",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "links"
+              ]
+            },
+            "description": "**The reason the delete is soft.** A hard delete would free the code, and a later link could claim it — so a QR printed on a wall would start sending people to a stranger’s destination. `existsByCode` counts deleted rows on purpose."
+          },
+          "response": []
+        },
+        {
+          "name": "55 - Delete without a token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"403 Forbidden, not 410\", () => pm.response.to.have.status(403));\n\nconst body = pm.response.json();\npm.test(\"type is invalid-management-token\", () =>\n    pm.expect(body.type).to.eql(\"urn:problem-type:invalid-management-token\"));\npm.test(\"the code is not returned to an unauthorised caller\", () =>\n    pm.expect(body.code).to.be.undefined);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/links/{{deleteAlias}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "links",
+                "{{deleteAlias}}"
+              ]
+            },
+            "description": "403, not 410. The link is deleted and the caller cannot know it: authorisation runs before the state is examined, so someone without the token learns nothing about a link they do not own — not even that it once existed."
+          },
+          "response": []
+        }
+      ],
+      "description": "Deleting a link marks it: the row stays, with the moment it was deleted, and  \nevery path that serves the link answers 410 from then on. Nothing is removed  \nfrom the database by this endpoint.\n\nTwo reasons. The row is the audit trail — what existed, where it pointed, when  \nits owner withdrew it. And the code stays occupied: `existsByCode` counts  \ndeleted rows on purpose, so a code can never be issued twice. A hard delete  \nwould free it, and a QR printed on a wall would eventually start sending people  \nto a stranger's destination. Request 54 is the one that pins that.\n\nThe alias is generated per run. Deleting reserves a code for ever, so a fixed  \none would work the first time and return 409 on every run after it — this  \nfolder would poison itself with its own success.\n\nRequest 55 is the boundary. A `DELETE` without a token on an already-deleted  \nlink answers 403, not 410: authorisation runs before the state is examined, so  \na caller who cannot prove ownership learns nothing about the link, not even  \nthat it once existed.\n\nWhat the deletion does not do: the stored logo and the target URL stay in the  \nrow. Removing the data itself is a manual operation, stated in SECURITY.md  \nrather than implied."
     }
   ],
   "variable": [
@@ -2008,6 +2352,14 @@
     },
     {
       "key": "headToken",
+      "value": ""
+    },
+    {
+      "key": "deleteAlias",
+      "value": ""
+    },
+    {
+      "key": "deleteToken",
       "value": ""
     }
   ]
