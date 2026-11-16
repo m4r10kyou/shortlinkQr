@@ -7,4 +7,6 @@ public interface RedirectTarget {
     String getTargetUrl();
 
     Instant getExpiresAt();
+
+    Instant getDeletedAt();
 }

@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -59,21 +60,21 @@ public class ShortLinkController {
 
     @GetMapping("/{code}")
     public ShortLinkResponse getShortLink(@PathVariable("code") String code,
-                                          @RequestHeader(required = false , name ="X-Management-Token")String rawToken) {
+                                          @RequestHeader(required = false, name = "X-Management-Token") String rawToken) {
 
         ShortLink shortLink = shortLinkService.getByCodeWithAuthorization(code, rawToken);
 
-        return ShortLinkResponse.from(shortLink, baseUrl)  ;
+        return ShortLinkResponse.from(shortLink, baseUrl);
     }
 
     @PostMapping
-    public ResponseEntity<ShortLinkCreationResponse> createShortLink(@Valid @RequestBody ShortLinkRequest request){
+    public ResponseEntity<ShortLinkCreationResponse> createShortLink(@Valid @RequestBody ShortLinkRequest request) {
 
         CreatedShortLink createdShortLink = shortLinkService.createLink(request.targetUrl(), request.customAlias(), request.expiresAt());
 
-        ShortLinkCreationResponse bodyResponse = ShortLinkCreationResponse.from(createdShortLink.shortLink(), baseUrl, createdShortLink.rawToken() );
+        ShortLinkCreationResponse bodyResponse = ShortLinkCreationResponse.from(createdShortLink.shortLink(), baseUrl, createdShortLink.rawToken());
 
-        return  ResponseEntity
+        return ResponseEntity
                 .created(URI.create(bodyResponse.shortUrl()))
                 .cacheControl(CacheControl.noStore())
                 .body(bodyResponse);
@@ -81,13 +82,13 @@ public class ShortLinkController {
 
     @PatchMapping("/{code}")
     public ShortLinkEditionResponse editShortLink(@PathVariable("code") String code,
-                                                           @RequestHeader(required = false , name ="X-Management-Token")String rawToken,
-                                                           @Valid @RequestBody ShortLinkEditionRequest shortLink) {
+                                                  @RequestHeader(required = false, name = "X-Management-Token") String rawToken,
+                                                  @Valid @RequestBody ShortLinkEditionRequest shortLink) {
 
 
         ShortLinkUpdate shortLinkChangeRequest = new ShortLinkUpdate(shortLink.targetUrl(),
-                                                                    shortLink.expiresAt(),
-                                                                    shortLink.clearExpiry());
+                shortLink.expiresAt(),
+                shortLink.clearExpiry());
 
         ShortLink shortLinkUpdated = shortLinkService.updateLink(code, shortLinkChangeRequest, rawToken);
 
@@ -95,10 +96,10 @@ public class ShortLinkController {
     }
 
     @GetMapping(value = "/{code}/qr",
-                produces = MediaType.IMAGE_PNG_VALUE)
-    public ResponseEntity<byte[]> getQrCode(@PathVariable("code") String code){
+            produces = MediaType.IMAGE_PNG_VALUE)
+    public ResponseEntity<byte[]> getQrCode(@PathVariable("code") String code) {
 
-        ShortLink shortLink =shortLinkService.getByCode(code);
+        ShortLink shortLink = shortLinkService.getByCode(code);
 
         byte[] qrImage = generateQrImage(shortLink);
 
@@ -109,32 +110,42 @@ public class ShortLinkController {
 
     @PostMapping(value = "/{code}/logo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ShortLinkEditionResponse uploadLogo(@PathVariable("code") String code,
-                                        @RequestParam("file") MultipartFile file,
-                                        @RequestHeader(required = false , name ="X-Management-Token")String rawToken) throws IOException {
+                                               @RequestParam("file") MultipartFile file,
+                                               @RequestHeader(required = false, name = "X-Management-Token") String rawToken) throws IOException {
 
         logoUploadValidator.validate(file.getSize(), file.getContentType());
 
-        shortLinkService.getByCodeWithAuthorization(code,rawToken);
+        shortLinkService.getByCodeWithAuthorization(code, rawToken);
 
         byte[] imgBytes = file.getBytes();
 
         byte[] sanitizedImgBytes = logoImageProcessor.sanitize(imgBytes);
 
-        ShortLink shortLink = shortLinkService.attachLogo(code, sanitizedImgBytes,rawToken);
+        ShortLink shortLink = shortLinkService.attachLogo(code, sanitizedImgBytes, rawToken);
 
         return ShortLinkEditionResponse.from(shortLink, baseUrl);
     }
 
-    private byte[] generateQrImage(ShortLink shortLink){
+    @DeleteMapping(value = "/{code}")
+    public ResponseEntity<Void> deleteShortLink(
+            @PathVariable("code") String code,
+            @RequestHeader(required = false, name = "X-Management-Token") String rawToken) {
+
+        shortLinkService.deleteShortLink(code, rawToken);
+
+        return ResponseEntity.noContent().build();
+    }
+
+    private byte[] generateQrImage(ShortLink shortLink) {
 
         String url = this.baseUrl + shortLink.getCode();
 
-        if(shortLink.hasLogo()){
+        if (shortLink.hasLogo()) {
 
             return qrGenerator.generateWithLogo(url, shortLink.getLogoData());
         }
 
-        return  qrGenerator.generate(url);
+        return qrGenerator.generate(url);
     }
 
 }

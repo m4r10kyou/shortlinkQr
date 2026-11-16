@@ -5,6 +5,7 @@ import com.m4r10kyou.shortlinkQr.exception.InvalidAdminTokenException;
 import com.m4r10kyou.shortlinkQr.exception.InvalidLogoException;
 import com.m4r10kyou.shortlinkQr.exception.InvalidTokenException;
 import com.m4r10kyou.shortlinkQr.exception.RateLimitExceededException;
+import com.m4r10kyou.shortlinkQr.exception.ShortLinkDeletedException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkExpiredException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkNotFoundException;
 import org.slf4j.Logger;
@@ -111,6 +112,22 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         );
         problem.setTitle("Invalid logo");
         problem.setType(URI.create("urn:problem-type:invalid-logo"));
+
+        return problem;
+    }
+
+    @ExceptionHandler(ShortLinkDeletedException.class)
+    public ProblemDetail handleDeleted(ShortLinkDeletedException ex){
+
+        log.debug("Short Link deleted: {}", ex.getMessage());
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.GONE,
+                ex.getMessage()
+        );
+        problem.setTitle("Short link deleted");
+        problem.setType(URI.create("urn:problem-type:link-deleted"));
+        problem.setProperty("code", ex.getCode());
 
         return problem;
     }

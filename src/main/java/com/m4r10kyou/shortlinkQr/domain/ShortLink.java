@@ -40,6 +40,8 @@ public class ShortLink {
     @Column(length = 64)
     private String managementTokenHash;
 
+    private Instant deletedAt;
+
 
     public Long getId() {
         return id;
@@ -63,9 +65,9 @@ public class ShortLink {
 
     public byte[] getLogoData() {
 
-        if(hasLogo()) {
+        if (hasLogo()) {
             return Arrays.copyOf(this.logoData, this.logoData.length);
-        }else{
+        } else {
             return null;
         }
     }
@@ -74,10 +76,14 @@ public class ShortLink {
         return visitCount;
     }
 
+    public Instant getDeletedAt() {
+        return deletedAt;
+    }
+
     protected ShortLink() {
     }
 
-    public ShortLink(String code, String targetUrl, Instant expiresAt,String managementTokenHash ) {
+    public ShortLink(String code, String targetUrl, Instant expiresAt, String managementTokenHash) {
         this.code = code;
         this.targetUrl = targetUrl;
         this.expiresAt = expiresAt;
@@ -95,12 +101,13 @@ public class ShortLink {
         this.expiresAt = expiresAt;
     }
 
-    public void removeExpiry(){
+    public void removeExpiry() {
 
         this.expiresAt = null;
     }
 
     public void changeTargetUrl(String url) {
+
         Objects.requireNonNull(url, "Target url cannot be null");
 
         this.targetUrl = url;
@@ -130,13 +137,26 @@ public class ShortLink {
 
     public boolean matchesManagementToken(String candidateHash) {
 
-        if( null == managementTokenHash || null == candidateHash  || candidateHash.isBlank()){
+        if (null == managementTokenHash || null == candidateHash || candidateHash.isBlank()) {
 
             return false;
         }
 
 
-        return MessageDigest.isEqual( managementTokenHash.getBytes(StandardCharsets.UTF_8) , candidateHash.getBytes(StandardCharsets.UTF_8));
+        return MessageDigest.isEqual(managementTokenHash.getBytes(StandardCharsets.UTF_8), candidateHash.getBytes(StandardCharsets.UTF_8));
     }
 
+    public boolean isDeleted() {
+        return null != deletedAt;
+    }
+
+    public void markDeleted(){
+
+        if (isDeleted()) {
+
+            throw new IllegalStateException("Link is already deleted");
+        }
+
+        this.deletedAt = Instant.now();
+    }
 }

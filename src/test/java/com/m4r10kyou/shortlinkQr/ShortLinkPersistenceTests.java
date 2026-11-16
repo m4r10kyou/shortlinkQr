@@ -127,4 +127,29 @@ public class ShortLinkPersistenceTests {
                 .hasMessageContaining("uk_short_links_code");
     }
 
+    /* A deleted code stays reserved for ever. existsByCode must keep counting
+   deleted rows: if someone ever adds a "deleted_at is null" filter here, codes
+   become reusable, and a QR printed on a wall would start resolving to a
+   stranger's link. */
+    @Test
+    void existsByCode_withADeletedCode_returnsTrue(){
+
+        String code ="my-repo-to-delete";
+        String targetUrl = "https://github.com/m4r10kyou/shortlinkQr";
+
+        ShortLink newLink = new ShortLink(code,targetUrl,null,null );
+        repository.save(newLink);
+
+       newLink.markDeleted();
+
+        entityManager.flush();
+        entityManager.clear();
+
+        ShortLink deletedShortLink = repository.findByCode(code).orElseThrow();
+
+        assertThat(repository.existsByCode(code)).isTrue();
+        assertThat(deletedShortLink.isDeleted()).isTrue();
+        assertThat(deletedShortLink.getDeletedAt()).isBeforeOrEqualTo(Instant.now());
+    }
+
 }

@@ -256,6 +256,29 @@ The generated QR code encodes the *shortlink*, not the final destination. This m
 - Jackson 3 enables `FAIL_ON_NULL_FOR_PRIMITIVES`. An absent primitive in a record component is treated as null, the body fails to bind, and the client gets a 400 that says "Failed to read request" and names nothing.
 - Disabling the feature globally would have fixed this one field and silenced a genuine error everywhere else. The record takes a `Boolean` and normalises absent to `false` in its compact constructor instead, so the rest of the application still receives a primitive and the check stays on for every other DTO.
 
+### Deletion
+
+**Marked, not removed.** *The row stays; `deleted_at` is the whole mechanism.*
+- A `DELETE` sets the timestamp and the link stops serving: the redirect, the management read, the QR and the edit endpoints all answer 410 from then on.
+- The row is the audit trail — what existed, where it pointed, when its owner withdrew it.
+- And it is what keeps the code occupied. `existsByCode` counts deleted rows on purpose, so a code is never issued twice.
+
+**A reused code would re-point a printed QR.** *The reason the deletion is soft.*
+- A hard delete frees the code. The generator, or a custom alias, could claim it later, and every QR already printed with that code would start sending people to a stranger's destination — without anyone touching the paper.
+- `existsByCode` is therefore the one query that must **not** filter deleted rows, which is the opposite of every other one. A test pins it, with a comment saying why, because "add `deleted_at is null` for consistency" is exactly the change someone would make.
+
+**410, not 404, everywhere.** *The link existed and its owner removed it.*
+- One problem type, `urn:problem-type:link-deleted`, on all four read paths and on a second `DELETE`. A client branches on one value.
+- Deleted beats expired. An expiry can be undone with a `PATCH` and a deletion cannot, so it is the more definitive fact and its check runs first.
+- `HEAD` inherited it for free: both redirect paths already shared one private lookup, so the check went in once and covered them both.
+
+**403 before 410.** *Authorisation runs before the state is examined.*
+- A `DELETE` without a token on a deleted link answers 403, the same answer a wrong token gets on a live one. Someone who cannot prove ownership learns nothing about the link — not even that it once existed.
+- The alternative was one check inside the shared loader, which would have been impossible to forget. It was rejected because it fires before authorisation and would break the rule above. The price is two lines repeated in five methods, and a test for each.
+
+**Reactivation is not offered.** *Soft deletion buys the audit trail and the reserved code, and neither needs an undo.*
+- A restored link raises questions of its own — what happens to its counter, and to its logo — worth answering deliberately rather than as a side effect of a flag.
+
 ### QR codes
 
 **Error correction level H.** *Reed-Solomon error correction recovers around 30% of damaged codewords.*
@@ -365,6 +388,7 @@ Five levels, each with a different cost and purpose:
 - **The management GET loads the logo to answer a boolean.** `getByCode` fetches the whole entity, logo bytes included, and `hasLogo` is derived from it. A `@Basic(fetch = LAZY)` on a basic attribute does nothing without bytecode enhancement, so the blob travels on every read of a link that has one. The redirect path already avoids this with a projection; the management path would need its own.
 - **The free hosting tier sleeps.** The application host suspends the service after fifteen minutes without traffic and takes about a minute to wake, so the first request after a quiet period is slow. The database suspends after five minutes and wakes in well under a second.
 - **The visit counter is not a count of people.** `HEAD` no longer counts, but link previewers that issue a full `GET` — WhatsApp and Telegram among them — are indistinguishable from a human click at this layer. This removed one class of inflation, not all of it.
+- **Deleting does not remove the data.** The row, the target URL and any uploaded logo are kept after a `DELETE`; the API simply stops serving them. Erasing the stored data is a manual database operation, stated in `SECURITY.md` rather than implied. A deleted link also cannot be restored through the API.
 
 ## 🛠️ Tech Stack
 - **Java 21**
@@ -451,7 +475,7 @@ Four requests upload a file from `docs/`, referenced relatively, so set
 Postman's working directory (Settings → General) to the repository root before
 running the collection.
 
-Forty-six requests across eight folders:
+Fifty-five requests across nine folders:
 
 - **Links API** — creation and retrieval, including the alias conflict. The
   generated code and the management token are captured into variables, so later
@@ -479,11 +503,14 @@ Forty-six requests across eight folders:
   counter at zero, and a `GET` that must take it to one. The second half carries
   as much weight as the first: a fix that stopped both from counting would pass
   every `HEAD` assertion in the folder.
+- **Soft delete** — the `DELETE` endpoint and the four read paths that answer
+  410 afterwards, plus the two boundaries: a code that stays reserved, and a
+  caller without a token who gets 403 rather than being told the link is gone.
 
-Last full run: 46 requests, 104 assertions, 104 passed, against a database
+Last full run: 55 requests, 128 assertions, 128 passed, against a database
 that already held the custom alias. Two of those assertions live inside a
 conditional in request 02 and only run when the alias is still free, so a
-first run against an empty database reports 106.
+first run against an empty database reports 130.
 
 The rate limit is not exercised here. Triggering it would take more
 requests than the limit allows in a minute, and lowering the limit for
@@ -512,6 +539,7 @@ which pins the limit at two and asserts the 429, its `type` and its
     - [x] Management endpoints
     - [x] Public redirect endpoint
     - [x] HTTP error mapping
+    - [x] Soft deletion, with 410 on every path that served the link
 - [x] **QR code generation**
     - [x] QR rendering
     - [x] Logo embedding
@@ -527,7 +555,7 @@ which pins the limit at two and asserts the 429, its `type` and its
 
 ### Next
 
-- `DELETE /api/links/{code}` and `DELETE /api/links/{code}/logo`
+- `DELETE /api/links/{code}/logo`
 - Management token rotation
 - A projection for the management read, so a boolean does not cost a blob
 - An HTML fallback for the public redirect

@@ -3,6 +3,7 @@ package com.m4r10kyou.shortlinkQr.service;
 import com.m4r10kyou.shortlinkQr.domain.ExpirationPolicy;
 import com.m4r10kyou.shortlinkQr.domain.ShortLink;
 import com.m4r10kyou.shortlinkQr.exception.AliasAlreadyExistsException;
+import com.m4r10kyou.shortlinkQr.exception.ShortLinkDeletedException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkExpiredException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkNotFoundException;
 import com.m4r10kyou.shortlinkQr.repository.RedirectTarget;
@@ -31,8 +32,11 @@ public class ShortLinkService {
 
     @Transactional(readOnly = true)
     public ShortLink getByCode(String code) {
+        ShortLink shortLink = getShortLink(code);
 
-        return getShortLink(code);
+        checkDeletedShortLink(shortLink);
+
+        return shortLink;
     }
 
     @Transactional
@@ -46,7 +50,7 @@ public class ShortLinkService {
 
             if (shortLinkRepository.existsByCode(customAlias)) {
 
-                throw new AliasAlreadyExistsException( customAlias );
+                throw new AliasAlreadyExistsException(customAlias);
             }
 
             finalCode = customAlias;
@@ -62,11 +66,11 @@ public class ShortLinkService {
 
         try {
 
-            return new CreatedShortLink( shortLinkRepository.save(shortLink), token.rawToken());
+            return new CreatedShortLink(shortLinkRepository.save(shortLink), token.rawToken());
 
         } catch (DataIntegrityViolationException dive) {
 
-            if(usedCustomAlias){
+            if (usedCustomAlias) {
 
                 throw new AliasAlreadyExistsException(customAlias);
             }
@@ -86,10 +90,14 @@ public class ShortLinkService {
     }
 
 
-    private RedirectTarget findTargetByCode(String code){
+    private RedirectTarget findTargetByCode(String code) {
 
         RedirectTarget target = shortLinkRepository.findTargetByCode(code)
-                .orElseThrow( () -> new ShortLinkNotFoundException(code));
+                .orElseThrow(() -> new ShortLinkNotFoundException(code));
+
+        if (null != target.getDeletedAt()) {
+            throw new ShortLinkDeletedException(code);
+        }
 
         if (ExpirationPolicy.isExpired(target.getExpiresAt())) {
             throw new ShortLinkExpiredException(code);
@@ -99,7 +107,7 @@ public class ShortLinkService {
     }
 
     @Transactional(readOnly = true)
-    public String lookupTargetWithoutCounting(String code){
+    public String lookupTargetWithoutCounting(String code) {
 
         RedirectTarget target = findTargetByCode(code);
 
@@ -109,9 +117,11 @@ public class ShortLinkService {
     @Transactional
     public ShortLink updateLink(String code, ShortLinkUpdate shortLinkUpdate, String rawToken) {
 
-        ShortLink shortLink = getShortLinkWithAuthorization(code,rawToken);
+        ShortLink shortLink = getShortLinkWithAuthorization(code, rawToken);
 
-        if (null!= shortLinkUpdate.targetUrl()) {
+        checkDeletedShortLink(shortLink);
+
+        if (null != shortLinkUpdate.targetUrl()) {
 
             shortLink.changeTargetUrl(shortLinkUpdate.targetUrl());
         }
@@ -119,7 +129,7 @@ public class ShortLinkService {
         if (shortLinkUpdate.clearExpiry()) {
 
             shortLink.removeExpiry();
-        } else if(null != shortLinkUpdate.expiresAt()){
+        } else if (null != shortLinkUpdate.expiresAt()) {
 
             shortLink.changeExpiry(shortLinkUpdate.expiresAt());
         }
@@ -128,9 +138,11 @@ public class ShortLinkService {
     }
 
     @Transactional
-    public ShortLink attachLogo(String code, byte[] sanitizedBytes, String rawToken){
+    public ShortLink attachLogo(String code, byte[] sanitizedBytes, String rawToken) {
 
-        ShortLink  shortLink =  getShortLinkWithAuthorization( code,  rawToken);
+        ShortLink shortLink = getShortLinkWithAuthorization(code, rawToken);
+
+        checkDeletedShortLink(shortLink);
 
         shortLink.attachLogo(sanitizedBytes);
 
@@ -138,22 +150,45 @@ public class ShortLinkService {
     }
 
     @Transactional(readOnly = true)
-    public ShortLink getByCodeWithAuthorization(String code, String rawToken){
+    public ShortLink getByCodeWithAuthorization(String code, String rawToken) {
 
-        return getShortLinkWithAuthorization(code,rawToken);
+        ShortLink shortLink = getShortLinkWithAuthorization(code, rawToken);
+
+        checkDeletedShortLink(shortLink);
+
+        return shortLink;
     }
 
-    private ShortLink getShortLink(String code){
+    @Transactional
+    public void deleteShortLink(String code, String rawToken) {
+
+        ShortLink shortLink = getShortLinkWithAuthorization(code, rawToken);
+
+        checkDeletedShortLink(shortLink);
+
+        shortLink.markDeleted();
+    }
+
+    private void checkDeletedShortLink(ShortLink shortLink) {
+
+        String code = shortLink.getCode();
+
+        if (shortLink.isDeleted()) {
+            throw new ShortLinkDeletedException(code);
+        }
+    }
+
+    private ShortLink getShortLink(String code) {
 
         return shortLinkRepository.findByCode(code)
                 .orElseThrow(() -> new ShortLinkNotFoundException(code));
     }
 
-    private ShortLink getShortLinkWithAuthorization(String code, String rawToken){
+    private ShortLink getShortLinkWithAuthorization(String code, String rawToken) {
 
         ShortLink shortLink = getShortLink(code);
 
-        authorizationTokenProcessor.authorize(shortLink,rawToken);
+        authorizationTokenProcessor.authorize(shortLink, rawToken);
 
         return shortLink;
     }

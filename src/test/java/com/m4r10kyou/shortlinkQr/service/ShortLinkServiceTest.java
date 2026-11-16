@@ -3,6 +3,7 @@ package com.m4r10kyou.shortlinkQr.service;
 import com.m4r10kyou.shortlinkQr.domain.ShortLink;
 import com.m4r10kyou.shortlinkQr.exception.AliasAlreadyExistsException;
 import com.m4r10kyou.shortlinkQr.exception.InvalidTokenException;
+import com.m4r10kyou.shortlinkQr.exception.ShortLinkDeletedException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkExpiredException;
 import com.m4r10kyou.shortlinkQr.exception.ShortLinkNotFoundException;
 import com.m4r10kyou.shortlinkQr.repository.RedirectTarget;
@@ -394,7 +395,7 @@ class ShortLinkServiceTest {
     }
 
     @Test
-    void createLink_whenTheAliasIsTakenConcurrently_throwsAliasAlreadyExists(){
+    void createLink_whenTheAliasIsTakenConcurrently_throwsAliasAlreadyExists() {
 
         String targetUrl = "https://example.com";
         String customAlias = "aliasTaken";
@@ -404,13 +405,13 @@ class ShortLinkServiceTest {
         when(shortLinkRepository.save(any()))
                 .thenThrow(new DataIntegrityViolationException("duplicate key"));
 
-        assertThatThrownBy(() -> shortLinkService.createLink(targetUrl,customAlias,null))
+        assertThatThrownBy(() -> shortLinkService.createLink(targetUrl, customAlias, null))
                 .isInstanceOf(AliasAlreadyExistsException.class)
                 .extracting("alias").isEqualTo(customAlias);
     }
 
     @Test
-    void lookupTargetWithoutCounting_whenCodeExists_returnsTargetUrlAndDoesNotRegisterVisit(){
+    void lookupTargetWithoutCounting_whenCodeExists_returnsTargetUrlAndDoesNotRegisterVisit() {
 
         String target = "https://example.com";
         String code = "valid";
@@ -427,7 +428,7 @@ class ShortLinkServiceTest {
     }
 
     @Test
-    void lookupTargetWithoutCounting_whenCodeDoesNotExist_throwsShortLinkNotFoundException(){
+    void lookupTargetWithoutCounting_whenCodeDoesNotExist_throwsShortLinkNotFoundException() {
 
         String code = "no_exists";
 
@@ -441,9 +442,9 @@ class ShortLinkServiceTest {
     }
 
     @Test
-    void lookupTargetWithoutCounting_whenCodeIsExpired_throwsShortLinkExpiredException(){
+    void lookupTargetWithoutCounting_whenCodeIsExpired_throwsShortLinkExpiredException() {
 
-        String target="https://www.expired.link";
+        String target = "https://www.expired.link";
         String code = "expired";
         Instant pastExpiration = Instant.now().minus(1, ChronoUnit.HOURS);
         RedirectTarget redirectTarget = redirectTargetExpiringAt(target, pastExpiration);
@@ -457,6 +458,170 @@ class ShortLinkServiceTest {
         verify(shortLinkRepository, never()).registerVisitCount(any());
     }
 
+    @Test
+    void deleteShortLink_withAValidToken_marksTheLinkAsDeleted() {
+
+        String targetUrl = "https://www.deleted.link";
+        String code = "deleted";
+
+        ShortLink shortLinkDeleted = new ShortLink(code, targetUrl, null, hashToken);
+
+        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(shortLinkDeleted));
+
+        shortLinkService.deleteShortLink(code, hashToken);
+
+        assertThat(shortLinkDeleted.isDeleted()).isTrue();
+    }
+
+    @Test
+    void deleteShortLink_withAnInvalidToken_doesNotMarkTheLink() {
+
+        String targetUrl = "https://www.deleted.link";
+        String code = "deleted";
+        String tokenInvalid = "tokenInvalid";
+        String errorMsg = "Token provided is invalid";
+
+        ShortLink shortLink = new ShortLink(code, targetUrl, null, hashToken);
+
+        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(shortLink));
+
+        doThrow(new InvalidTokenException(errorMsg, code))
+                .when(authorizationTokenProcessor).authorize(shortLink, tokenInvalid);
+
+        assertThatThrownBy(() -> shortLinkService.deleteShortLink(code, tokenInvalid))
+                .isInstanceOf(InvalidTokenException.class)
+                .hasMessageContaining(errorMsg);
+
+        assertThat(shortLink.isDeleted()).isFalse();
+    }
+
+    @Test
+    void deleteShortLink_withAnAlreadyDeletedLink_throwsShortLinkDeletedException() {
+
+        String targetUrl = "https://www.deleted.link";
+        String code = "deleted";
+
+        ShortLink shortLinkDeleted = new ShortLink(code, targetUrl, null, hashToken);
+        shortLinkDeleted.markDeleted();
+
+        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(shortLinkDeleted));
+
+        assertThatThrownBy(() -> shortLinkService.deleteShortLink(code, hashToken))
+                .isInstanceOf(ShortLinkDeletedException.class)
+                .hasMessageContaining(code);
+    }
+
+    @Test
+    void resolveCode_withADeletedCode_throwsAndDoesNotRegisterVisit() {
+
+        String target = "https://example.com";
+        String code = "deleted";
+        Instant deletedAt = Instant.now().minus(1, ChronoUnit.HOURS);
+        RedirectTarget redirectTarget = redirectTargetDeletedAt(target, deletedAt);
+
+        when(shortLinkRepository.findTargetByCode(code)).thenReturn(Optional.of(redirectTarget));
+
+        assertThatThrownBy(() -> shortLinkService.resolveCode(code))
+                .isInstanceOf(ShortLinkDeletedException.class)
+                .hasMessageContaining(code);
+
+        verify(shortLinkRepository, never()).registerVisitCount(any());
+    }
+
+    @Test
+    void lookupTargetWithoutCounting_withADeletedCode_throwsShortLinkDeletedException() {
+
+        String target = "https://www.deleted.link";
+        String code = "deleted";
+        Instant deletedAt = Instant.now().minus(1, ChronoUnit.HOURS);
+        RedirectTarget redirectTarget = redirectTargetDeletedAt(target, deletedAt);
+
+        when(shortLinkRepository.findTargetByCode(code)).thenReturn(Optional.of(redirectTarget));
+
+        assertThatThrownBy(() -> shortLinkService.lookupTargetWithoutCounting(code))
+                .isInstanceOf(ShortLinkDeletedException.class)
+                .hasMessageContaining(code);
+
+        verify(shortLinkRepository, never()).registerVisitCount(any());
+    }
+
+    @Test
+    void getByCode_withADeletedCode_throwsShortLinkDeletedException() {
+
+        String code = "deleted-code-target-url";
+        String target = "https://false.example.com";
+
+        ShortLink slDeleted = new ShortLink(code, target, null, hashToken);
+        slDeleted.markDeleted();
+
+        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(slDeleted));
+
+        assertThatThrownBy(() -> shortLinkService.getByCode(code))
+                .isInstanceOf(ShortLinkDeletedException.class)
+                .hasMessageContaining(code);
+    }
+
+    @Test
+    void getByCodeWithAuthorization_withADeletedCode_throwsShortLinkDeletedException() {
+
+        String code = "deleted-code-target-url";
+        String target = "https://false.example.com";
+        String rawToken = "someToken";
+
+        ShortLink slDeleted = new ShortLink(code, target, null, rawToken);
+        slDeleted.markDeleted();
+
+        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(slDeleted));
+
+        assertThatThrownBy(() -> shortLinkService.getByCodeWithAuthorization(code, rawToken))
+                .isInstanceOf(ShortLinkDeletedException.class)
+                .hasMessageContaining(code);
+    }
+
+    @Test
+    void updateLink_withADeletedCode_throwsAndChangesNothing() {
+
+        String code = "deleted-code-target-url";
+        String originalTarget = "https://old.example.com";
+        String newTarget = "https://new.example.com";
+        Instant originalExpiry = Instant.now().plus(1, ChronoUnit.HOURS);
+        String rawToken = "someToken";
+
+        ShortLink slDeleted = new ShortLink(code, originalTarget, originalExpiry, rawToken);
+        slDeleted.markDeleted();
+
+        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(slDeleted));
+
+        ShortLinkUpdate slUpdate = new ShortLinkUpdate(newTarget, Instant.now().plus(5, ChronoUnit.DAYS), false);
+
+        assertThatThrownBy(() -> shortLinkService.updateLink(code, slUpdate, rawToken))
+                .isInstanceOf(ShortLinkDeletedException.class)
+                .hasMessageContaining(code);
+
+        assertThat(slDeleted.getTargetUrl()).isEqualTo(originalTarget);
+        assertThat(slDeleted.getExpiresAt()).isEqualTo(originalExpiry);
+    }
+
+    @Test
+    void attachLogo_withADeletedCode_throwsAndDoesNotAttach() {
+
+        String code = "my-repo-deleted";
+        String urlTarget = "https://new.deleted.com";
+
+        ShortLink link = new ShortLink(code, urlTarget, null, hashToken);
+        link.markDeleted();
+
+        byte[] pngSignature = new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+
+        when(shortLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
+
+        assertThatThrownBy(() -> shortLinkService.attachLogo(code, pngSignature, hashToken))
+                .isInstanceOf(ShortLinkDeletedException.class)
+                .hasMessageContaining(code);
+
+        assertThat(link.hasLogo()).isFalse();
+    }
+
     private RedirectTarget redirectTargetExpiringAt(String url, Instant when) {
 
         return new RedirectTarget() {
@@ -468,6 +633,32 @@ class ShortLinkServiceTest {
 
             @Override
             public Instant getExpiresAt() {
+                return when;
+            }
+
+            @Override
+            public Instant getDeletedAt() {
+                return null;
+            }
+        };
+    }
+
+    private RedirectTarget redirectTargetDeletedAt(String url, Instant when) {
+
+        return new RedirectTarget() {
+
+            @Override
+            public String getTargetUrl() {
+                return url;
+            }
+
+            @Override
+            public Instant getExpiresAt() {
+                return null;
+            }
+
+            @Override
+            public Instant getDeletedAt() {
                 return when;
             }
         };
